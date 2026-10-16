@@ -43,9 +43,9 @@ class ParticipantResource extends JsonResource
      * `project.assessment_type` union (closed by the FormRequest + model
      * immutability guard, `Project.php:147-150`) and `project.id` `(int)`.
      *
-     * @return array{id: int, candidate_ref: string, display_name: string, role_code: string|null, language: string|null, status: 'in_attesa'|'in_corso'|'in_valutazione'|'completato'|'errore', started_at: string|null, completed_at: string|null, created_at: string|null, scheduled_at: string|null, scheduling_status: 'pending'|'notice_sent'|'started'|'cancelled'|null, branding: array{name: string|null, primary_color: string|null, logo_url: string|null}, project: array{id: int, role_code: string|null, language: string, assessment_type: 'standard'|'potential', exit_redirect_url: string|null, error_redirect_url: string|null}|null}
+     * @return array{id: int, candidate_ref: string, display_name: string, role_code: string|null, language: string|null, status: 'in_attesa'|'in_corso'|'in_valutazione'|'completato'|'errore', started_at: string|null, completed_at: string|null, created_at: string|null, scheduled_at: string|null, scheduling_status: 'pending'|'notice_sent'|'started'|'cancelled'|null, branding: array{name: string|null, primary_color: string|null, background_color: string|null, logo_url: string|null}, project: array{id: int, role_code: string|null, language: string, assessment_type: 'standard'|'potential', exit_redirect_url: string|null, error_redirect_url: string|null}|null}
      *
-     * @scramble-return array{id: int, candidate_ref: string, display_name: string, role_code: string|null, language: string|null, status: 'in_attesa'|'in_corso'|'in_valutazione'|'completato'|'errore', started_at: string|null, completed_at: string|null, created_at: string|null, scheduled_at: string|null, scheduling_status: 'pending'|'notice_sent'|'started'|'cancelled'|null, branding: array{name: string|null, primary_color: string|null, logo_url: string|null}, project: array{id: int, role_code: string|null, language: string, assessment_type: 'standard'|'potential', exit_redirect_url: string|null, error_redirect_url: string|null}|null}
+     * @scramble-return array{id: int, candidate_ref: string, display_name: string, role_code: string|null, language: string|null, status: 'in_attesa'|'in_corso'|'in_valutazione'|'completato'|'errore', started_at: string|null, completed_at: string|null, created_at: string|null, scheduled_at: string|null, scheduling_status: 'pending'|'notice_sent'|'started'|'cancelled'|null, branding: array{name: string|null, primary_color: string|null, background_color: string|null, logo_url: string|null}, project: array{id: int, role_code: string|null, language: string, assessment_type: 'standard'|'potential', exit_redirect_url: string|null, error_redirect_url: string|null}|null}
      */
     public function toArray(Request $request): array
     {
@@ -80,8 +80,8 @@ class ParticipantResource extends JsonResource
              * bootstrap the app already makes, rather than needing a second
              * endpoint and a second round trip before anything can render.
              *
-             * Exactly two keys. A candidate is an outsider holding a
-             * short-lived token; the organization's name, webhook
+             * Exactly four keys (name, primary_color, background_color, logo_url). A candidate is an outsider holding a
+             * short-lived token; the webhook
              * configuration and every other setting are none of their
              * business, and the test asserts this key set exactly so a field
              * added to `OrganizationResource` later cannot leak here.
@@ -106,6 +106,7 @@ class ParticipantResource extends JsonResource
                 // staying out.
                 'name' => $participant->organization?->name,
                 'primary_color' => $participant->organization?->primary_color,
+                'background_color' => $participant->organization?->background_color,
                 // Absolute, for the same reason as OrganizationResource: the
                 // candidate frontend is a separate origin from this API, so a
                 // rooted `/storage/...` path resolved against the wrong host.

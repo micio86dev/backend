@@ -24,6 +24,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property string|null $default_webhook_secret
  * @property string|null $logo_path
  * @property string|null $primary_color
+ * @property string|null $background_color
  * @property string $currency_code Display currency, a real FK to `currencies.code`; defaults to `USD`.
  * @property int|null $public_api_rate_limit_live
  * @property int|null $public_api_rate_limit_test
@@ -61,6 +62,7 @@ class Organization extends Model implements PubliclyIdentifiable
         // so a stored URL would bake one environment's host into the row.
         'logo_path',
         'primary_color',
+        'background_color',
         'currency_code',
         // Public API (`/v1`) rate-limit overrides (public-api step 3, SPEC.md
         // §3.2) — both null-by-default; see the migration's own docblock for

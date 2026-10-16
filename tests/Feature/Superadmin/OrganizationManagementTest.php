@@ -75,8 +75,10 @@ test('a superadmin reads and updates any organization while acting as none or an
     $this->withToken($token)->patchJson("/api/admin/organizations/{$acme->id}", [
         'name' => 'Acme Renamed',
         'primary_color' => '#112233',
+        'background_color' => '#F1F5F9',
         'slug' => 'must-be-ignored',
-    ])->assertOk()->assertJsonPath('data.name', 'Acme Renamed')->assertJsonPath('data.primary_color', '#112233');
+    ])->assertOk()->assertJsonPath('data.name', 'Acme Renamed')->assertJsonPath('data.primary_color', '#112233')
+        ->assertJsonPath('data.background_color', '#F1F5F9');
 
     $fresh = $acme->fresh();
     expect($fresh->slug)->toBe($acme->slug)
@@ -92,6 +94,16 @@ test('an invalid primary colour is refused on update', function (): void {
 
     $response->assertUnprocessable();
     expect($response->json('errors.primary_color.0'))->toBe('primary_color_invalid');
+});
+
+test('an invalid background colour is refused on update', function (): void {
+    $acme = Organization::factory()->create();
+    ['token' => $token] = saSuperadmin();
+
+    $response = $this->withToken($token)->patchJson("/api/admin/organizations/{$acme->id}", ['background_color' => 'red;}']);
+
+    $response->assertUnprocessable();
+    expect($response->json('errors.background_color.0'))->toBe('background_color_invalid');
 });
 
 test('an unknown organization is a 404', function (): void {

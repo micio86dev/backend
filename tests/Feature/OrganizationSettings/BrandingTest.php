@@ -68,7 +68,7 @@ test('the settings response exposes both fields so the apps can theme themselves
     // The KEY must be present even when null — a UI cannot distinguish "not
     // configured" from "this build of the API does not support branding" if the
     // field is simply missing.
-    $response->assertJsonStructure(['data' => ['primary_color', 'logo_url']]);
+    $response->assertJsonStructure(['data' => ['primary_color', 'background_color', 'logo_url']]);
 });
 
 // ─── Writing ──────────────────────────────────────────────────────────────────
@@ -324,6 +324,52 @@ test('the DATABASE refuses a malformed colour, not only the request', function (
     expect($check?->def)->toContain('[0-9a-f]{6}');
 });
 
+// ─── Background colour ────────────────────────────────────────────────────────
+
+test('an admin can set and clear the background colour', function (): void {
+    $org = Organization::factory()->create();
+    ['token' => $token] = brandingUser($org, 'admin');
+
+    $this->withToken($token)->patchJson('/api/organization', ['background_color' => '#F1F5F9'])
+        ->assertOk()->assertJsonPath('data.background_color', '#F1F5F9');
+    expect($org->fresh()->background_color)->toBe('#F1F5F9');
+
+    $this->withToken($token)->patchJson('/api/organization', ['background_color' => null])->assertOk();
+    expect($org->fresh()->background_color)->toBeNull();
+});
+
+test('a non-admin cannot change the background colour', function (): void {
+    $org = Organization::factory()->create();
+    ['token' => $token] = brandingUser($org, 'operator');
+
+    $this->withToken($token)->patchJson('/api/organization', ['background_color' => '#123456'])->assertForbidden();
+    expect($org->fresh()->background_color)->toBeNull();
+});
+
+test('a background colour that is not hex is refused with a code', function (): void {
+    $org = Organization::factory()->create();
+    ['token' => $token] = brandingUser($org, 'admin');
+
+    foreach (['red', '#abc', '#12345g', 'red;}'] as $bad) {
+        $this->withToken($token)
+            ->patchJson('/api/organization', ['background_color' => $bad])
+            ->assertUnprocessable()
+            ->assertJsonPath('errors.background_color.0', 'background_color_invalid');
+    }
+
+    expect($org->fresh()->background_color)->toBeNull();
+});
+
+test('the DATABASE refuses a malformed background colour', function (): void {
+    $check = DB::selectOne(
+        "select pg_get_constraintdef(oid) as def
+         from pg_constraint
+         where conname = 'organizations_background_color_hex'"
+    );
+
+    expect($check?->def)->toContain('[0-9a-f]{6}');
+});
+
 // ─── Logo upload ──────────────────────────────────────────────────────────────
 
 function brandingImage(string $bytes, string $name): UploadedFile
@@ -550,7 +596,7 @@ test('the candidate session carries the branding, so the interview looks like th
     // can paint.
     Storage::fake();
 
-    $org = Organization::factory()->create(['primary_color' => '#7C3AED']);
+    $org = Organization::factory()->create(['primary_color' => '#7C3AED', 'background_color' => '#0F172A']);
     ['token' => $adminToken] = brandingUser($org, 'admin');
 
     $this->withToken($adminToken)->post('/api/organization/logo', [
@@ -565,6 +611,7 @@ test('the candidate session carries the branding, so the interview looks like th
 
     $response->assertOk();
     $response->assertJsonPath('data.branding.primary_color', '#7C3AED');
+    $response->assertJsonPath('data.branding.background_color', '#0F172A');
     expect($response->json('data.branding.logo_url'))->not->toBeNull();
 });
 
@@ -596,7 +643,7 @@ test('the candidate session exposes branding and NOTHING else about the organiza
 
     $response->assertOk();
     expect(array_keys($response->json('data.branding')))
-        ->toEqualCanonicalizing(['primary_color', 'logo_url', 'name']);
+        ->toEqualCanonicalizing(['primary_color', 'background_color', 'logo_url', 'name']);
     expect(json_encode($response->json()))->not->toContain('secret.example.test');
 });
 
@@ -614,6 +661,7 @@ test('an organization with no branding sends nulls, never a fabricated default',
 
     $response->assertOk();
     $response->assertJsonPath('data.branding.primary_color', null);
+    $response->assertJsonPath('data.branding.background_color', null);
     $response->assertJsonPath('data.branding.logo_url', null);
 });
 

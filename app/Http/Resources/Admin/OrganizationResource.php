@@ -30,9 +30,9 @@ class OrganizationResource extends JsonResource
      * return bigint as string, and the contract must be true regardless of
      * that PDO detail.
      *
-     * @return array{id: int, name: string, slug: string, primary_color: string|null, currency_code: string, logo_url: string|null, default_webhook_url: string|null, default_webhook_events: list<string>|null, has_default_webhook_secret: bool, created_at: string|null, updated_at: string|null}
+     * @return array{id: int, name: string, slug: string, primary_color: string|null, background_color: string|null, currency_code: string, logo_url: string|null, default_webhook_url: string|null, default_webhook_events: list<string>|null, has_default_webhook_secret: bool, created_at: string|null, updated_at: string|null}
      *
-     * @scramble-return array{id: int, name: string, slug: string, primary_color: string|null, currency_code: string, logo_url: string|null, default_webhook_url: string|null, default_webhook_events: list<string>|null, has_default_webhook_secret: bool, created_at: string|null, updated_at: string|null}
+     * @scramble-return array{id: int, name: string, slug: string, primary_color: string|null, background_color: string|null, currency_code: string, logo_url: string|null, default_webhook_url: string|null, default_webhook_events: list<string>|null, has_default_webhook_secret: bool, created_at: string|null, updated_at: string|null}
      */
     public function toArray(Request $request): array
     {
@@ -49,6 +49,7 @@ class OrganizationResource extends JsonResource
             // distinction to decide between the organization's colour and the
             // product's own.
             'primary_color' => $organization->primary_color,
+            'background_color' => $organization->background_color,
             // A resolved URL, not the stored path. The path is disk-relative
             // and the disk differs per environment, so resolving it here is the
             // one place that knows which disk is configured — the same reason
