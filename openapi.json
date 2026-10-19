@@ -1632,7 +1632,88 @@
                                                 },
                                                 "items": {
                                                     "type": "array",
-                                                    "items": {}
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "id": {
+                                                                "type": "string"
+                                                            },
+                                                            "provider": {
+                                                                "type": "string"
+                                                            },
+                                                            "label": {
+                                                                "type": "string"
+                                                            },
+                                                            "name": {
+                                                                "type": "string"
+                                                            },
+                                                            "language": {
+                                                                "type": [
+                                                                    "string",
+                                                                    "null"
+                                                                ]
+                                                            },
+                                                            "locale": {
+                                                                "type": [
+                                                                    "string",
+                                                                    "null"
+                                                                ]
+                                                            },
+                                                            "accent": {
+                                                                "type": [
+                                                                    "string",
+                                                                    "null"
+                                                                ]
+                                                            },
+                                                            "italian": {
+                                                                "type": [
+                                                                    "string",
+                                                                    "null"
+                                                                ]
+                                                            },
+                                                            "preview_image_url": {
+                                                                "type": [
+                                                                    "string",
+                                                                    "null"
+                                                                ]
+                                                            },
+                                                            "preview_audio_url": {
+                                                                "type": [
+                                                                    "string",
+                                                                    "null"
+                                                                ]
+                                                            },
+                                                            "preview_audio_via_api": {
+                                                                "type": "boolean"
+                                                            },
+                                                            "preview_video_url": {
+                                                                "type": [
+                                                                    "string",
+                                                                    "null"
+                                                                ]
+                                                            },
+                                                            "editable": {
+                                                                "type": [
+                                                                    "boolean",
+                                                                    "null"
+                                                                ]
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "id",
+                                                            "provider",
+                                                            "label",
+                                                            "name",
+                                                            "language",
+                                                            "locale",
+                                                            "accent",
+                                                            "italian",
+                                                            "preview_image_url",
+                                                            "preview_audio_url",
+                                                            "preview_audio_via_api",
+                                                            "preview_video_url"
+                                                        ]
+                                                    }
                                                 },
                                                 "code": {
                                                     "type": "string"

@@ -184,6 +184,7 @@ final class AvatarTemplateController extends Controller
      * A provider failure is reported as `{status: "provider_error", items: [], code: "<safe code>"}`,
      * not as an error; an unrecognized `provider`/`resource` pair answers `422`.
      */
+    #[ResponseDoc(200, type: 'array{data: array{status: string, items: list<'.AvatarProviderCatalogue::ITEM_DOC_SHAPE.'>, code?: string}}')]
     public function catalogue(Request $request): JsonResponse
     {
         $this->authorize('viewAny', AvatarTemplate::class);

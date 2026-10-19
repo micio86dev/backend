@@ -89,6 +89,13 @@ final class AvatarProviderCatalogue
      */
     public const CACHE_VERSION = 3;
 
+    /**
+     * The `entry()` shape as a PHPDoc type, for `#[Response]` on the route that returns the catalogue. Scramble
+     * cannot infer it through the helper-built arrays and would document `items` as an untyped list. `editable`
+     * is the one optional member (a Tavus persona only); `italian` is `native`, `multilingual` or null.
+     */
+    public const ITEM_DOC_SHAPE = 'array{id: string, provider: string, label: string, name: string, language: string|null, locale: string|null, accent: string|null, italian: string|null, preview_image_url: string|null, preview_audio_url: string|null, preview_audio_via_api: bool, preview_video_url: string|null, editable?: bool|null}';
+
     private const PAGE_SIZE = 100;
 
     private const TIMEOUT_SECONDS = 15;
