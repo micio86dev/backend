@@ -66,7 +66,7 @@ final class AvatarTemplateController extends Controller
         $this->authorize('viewAny', AvatarTemplate::class);
 
         return AvatarTemplateResource::collection(
-            AvatarTemplate::orderByDesc('is_active')->orderBy('name')->get()
+            AvatarTemplate::with('llmModel')->orderByDesc('is_active')->orderBy('name')->get()
         );
     }
 
@@ -265,7 +265,7 @@ final class AvatarTemplateController extends Controller
         // A superadmin's external voice is bound here, before the row is written,
         // exactly as on the platform route: the ledger and secrets are platform
         // tables, the template row below still belongs to the acting organization.
-        // Last, after every refusal a write can raise: the bind is not undoable.
+        // After every validation (the name included): the bind is not undoable. Only a lost name race or a failed write can still refuse the request.
         app(BindHeygenTemplateVoice::class)->run($validated['provider'], $validated['config']);
 
         // is_active is deliberately absent from the accepted fields. Creating a
@@ -328,7 +328,7 @@ final class AvatarTemplateController extends Controller
             $this->assertNameFreeAmong(AvatarTemplate::query(), $validated['name'], $template->id);
         }
 
-        // Last, after every refusal a write can raise: the bind is not undoable.
+        // After every validation (the name included): the bind is not undoable. Only a lost name race or a failed write can still refuse the request.
         if (array_key_exists('config', $validated)) {
             app(BindHeygenTemplateVoice::class)->run($template->provider, $validated['config']);
         }

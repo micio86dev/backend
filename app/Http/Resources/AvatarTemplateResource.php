@@ -126,7 +126,8 @@ class AvatarTemplateResource extends JsonResource
             return null;
         }
 
-        $model = LlmModel::find($template->llm_model_id);
+        // The relation, so a list that eager-loads `llmModel` reads every model in one query.
+        $model = $template->llmModel;
 
         if ($model === null) {
             return null;

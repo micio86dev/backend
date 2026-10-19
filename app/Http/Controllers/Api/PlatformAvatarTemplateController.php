@@ -112,7 +112,7 @@ final class PlatformAvatarTemplateController extends Controller
     {
         abort_unless($this->isSuperadmin($request), Response::HTTP_FORBIDDEN);
 
-        $templates = AvatarTemplate::platformOnly()->orderByDesc('is_active')->orderBy('name')->get();
+        $templates = AvatarTemplate::platformOnly()->with('llmModel')->orderByDesc('is_active')->orderBy('name')->get();
         $usage = $this->usage->for(array_values(array_map(intval(...), $templates->modelKeys())));
 
         return new AnonymousResourceCollection(
@@ -156,7 +156,7 @@ final class PlatformAvatarTemplateController extends Controller
 
         $this->assertConfigValid($validated['provider'], $validated['config']);
         $this->assertNameFreeAmong(AvatarTemplate::platformOnly(), $validated['name'], null);
-        // Last, after every refusal a write can raise: the bind is not undoable.
+        // After every validation (the name included): the bind is not undoable. Only a lost name race or a failed write can still refuse the request.
         app(BindHeygenTemplateVoice::class)->run($validated['provider'], $validated['config']);
 
         $template = $this->answeringPlatformNameRace(fn (): AvatarTemplate => $this->context->run($actor, fn (): AvatarTemplate => DB::transaction(function () use ($validated, $actor): AvatarTemplate {
@@ -219,7 +219,7 @@ final class PlatformAvatarTemplateController extends Controller
             $this->assertNameFreeAmong(AvatarTemplate::platformOnly(), $validated['name'], $template->id);
         }
 
-        // Last, after every refusal a write can raise: the bind is not undoable.
+        // After every validation (the name included): the bind is not undoable. Only a lost name race or a failed write can still refuse the request.
         if (array_key_exists('config', $validated)) {
             app(BindHeygenTemplateVoice::class)->run($template->provider, $validated['config']);
         }
