@@ -12,9 +12,11 @@ declare(strict_types=1);
  */
 
 use App\Models\AvatarTemplate;
+use App\Models\InterviewSession;
 use App\Models\Organization;
 use App\Models\Participant;
 use App\Models\Project;
+use App\Services\Provider\QuestionContext;
 use App\Support\Jwt\CandidateTokenFactory;
 use Illuminate\Support\Facades\DB;
 
@@ -46,4 +48,45 @@ function hraStartScenario(string $provider, array $templateAttrs = [], int $comp
     $participant = Participant::factory()->forProject($project)->create(['status' => $status]);
 
     return [$org, $project, $participant, CandidateTokenFactory::mintCandidateToken($participant)];
+}
+
+/**
+ * An in-memory `hr_avatar` session on a project pinned to a linked `hr_avatar` template.
+ *
+ * Not persisted: `HrAvatarProvider::issue()` only reads the id, the provider and the project.
+ *
+ * @param  array<string, mixed>  $templateAttrs  Overrides for the pinned template (e.g. `config`, `hr_avatar_config_id`).
+ */
+function hraIssueSession(array $templateAttrs = []): InterviewSession
+{
+    [$org, $project, $participant] = hraStartScenario('hr_avatar', array_merge(['hr_avatar_config_id' => 'avc_01HXYZ'], $templateAttrs), 1);
+
+    $session = new InterviewSession;
+    $session->forceFill([
+        'id' => 42,
+        'organization_id' => $org->id,
+        'participant_id' => $participant->id,
+        'project_id' => $project->id,
+        'question_index' => 0,
+        'competency_code' => 'HRA1',
+        'provider' => 'hr_avatar',
+        'status' => 'pending',
+    ]);
+
+    return $session;
+}
+
+/**
+ * @param  array<string, mixed>  $overrides  Named QuestionContext arguments to replace.
+ */
+function hraQuestionContext(array $overrides = []): QuestionContext
+{
+    return new QuestionContext(...array_merge([
+        'competencyCode' => 'HRA1',
+        'questionIndex' => 0,
+        'systemPrompt' => 'You are the interviewer. Ask about teamwork.',
+        'promptVersion' => 'conv-test',
+        'openingText' => 'Hello, shall we begin?',
+        'language' => 'it',
+    ], $overrides));
 }
