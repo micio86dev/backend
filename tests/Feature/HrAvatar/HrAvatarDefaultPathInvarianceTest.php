@@ -153,3 +153,30 @@ test('the field specs are exactly the pre-change object while the integration is
     'nothing set' => [false],
     'only the base URL set' => [true],
 ]);
+
+test('the config catalogue is refused while the integration is unavailable and sends no request', function (bool $partiallySet): void {
+    if ($partiallySet) {
+        config(['hr_avatar.base_url' => 'https://'.HRA_GOLDEN_HOST]);
+    }
+
+    Http::preventStrayRequests();
+    $token = TemplateActors::token('acting', Organization::factory()->create());
+
+    $this->withToken($token)->getJson('/api/avatar-templates/catalogue?provider=hr_avatar&resource=avatar_config')
+        ->assertStatus(422)->assertJsonValidationErrors(['provider']);
+
+    Http::assertNothingSent();
+})->with([
+    'nothing set' => [false],
+    'only the base URL set' => [true],
+]);
+
+test('the existing catalogue calls keep answering as before while the integration is unavailable', function (): void {
+    Http::fake(['*tavusapi*' => Http::response(['data' => [], 'total_count' => 0])]);
+    $token = TemplateActors::token('acting', Organization::factory()->create());
+
+    $this->withToken($token)->getJson('/api/avatar-templates/catalogue?provider=tavus&resource=voice')
+        ->assertOk()->assertJsonPath('data.status', 'empty');
+    $this->withToken($token)->getJson('/api/avatar-templates/catalogue?provider=heygen&resource=bogus')
+        ->assertStatus(422)->assertJsonValidationErrors(['resource']);
+});

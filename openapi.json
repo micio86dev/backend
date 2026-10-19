@@ -1570,7 +1570,7 @@
         "/avatar-templates/catalogue": {
             "get": {
                 "operationId": "avatarTemplate.catalogue",
-                "description": "Returns what the provider offers for one resource type (voices, avatars, replicas or\npersonas), as the data source of the template picker. A provider failure is reported as\n`{status: \"unavailable\", items: []}`, not as an error; an unrecognized `provider`/`resource`\npair answers `422`.",
+                "description": "Returns what the provider offers for one resource type (voices, avatars, replicas,\npersonas, or the organization's HR-Avatar configs), as the data source of the template picker.\nA provider failure is reported as `{status: \"provider_error\", items: [], code: \"<safe code>\"}`,\nnot as an error; an unrecognized `provider`/`resource` pair answers `422`.",
                 "summary": "List a provider's catalogue",
                 "tags": [
                     "AvatarTemplate"
@@ -1587,7 +1587,8 @@
                                 "heygen",
                                 "tavus",
                                 "cartesia",
-                                "elevenlabs"
+                                "elevenlabs",
+                                "hr_avatar"
                             ]
                         }
                     },
@@ -1601,7 +1602,8 @@
                                 "voice",
                                 "avatar",
                                 "replica",
-                                "pal"
+                                "pal",
+                                "avatar_config"
                             ]
                         }
                     },

@@ -57,6 +57,8 @@ final class AvatarTemplateController extends Controller
         // have them as `provider` (PROVIDERS above stays heygen|tavus).
         'cartesia' => ['voice'],
         'elevenlabs' => ['voice'],
+        // The organization's own HR-Avatar configs, offered only while the integration is available.
+        'hr_avatar' => ['avatar_config'],
     ];
 
     public function index(): AnonymousResourceCollection
@@ -146,7 +148,7 @@ final class AvatarTemplateController extends Controller
 
         foreach (self::PROVIDERS as $provider) {
             $specs[$provider] = array_map(
-                fn ($field): array => $field->toArray(),
+                fn (FieldSpec $field): array => $field->toArray(),
                 ProviderFieldSpecs::forCaller($provider, $this->callerIsSuperadmin()),
             );
         }
@@ -171,16 +173,16 @@ final class AvatarTemplateController extends Controller
     // reasoning `AvatarTemplatePolicy` already applies to `config`.
     //
     // Never a 500: `AvatarProviderCatalogue::fetch()` degrades a provider
-    // failure to `{status: 'unavailable', items: []}` on its own (D3); this
+    // failure to `{status: 'provider_error', items: [], code}` on its own (D3); this
     // action's only failure mode is a 422 for an unrecognized
     // `provider`/`resource` pair, checked BEFORE ever calling the provider.
     /**
      * List a provider's catalogue.
      *
-     * Returns what the provider offers for one resource type (voices, avatars, replicas or
-     * personas), as the data source of the template picker. A provider failure is reported as
-     * `{status: "unavailable", items: []}`, not as an error; an unrecognized `provider`/`resource`
-     * pair answers `422`.
+     * Returns what the provider offers for one resource type (voices, avatars, replicas,
+     * personas, or the organization's HR-Avatar configs), as the data source of the template picker.
+     * A provider failure is reported as `{status: "provider_error", items: [], code: "<safe code>"}`,
+     * not as an error; an unrecognized `provider`/`resource` pair answers `422`.
      */
     public function catalogue(Request $request): JsonResponse
     {
@@ -193,8 +195,8 @@ final class AvatarTemplateController extends Controller
         // `provider: ""` (avatar-template-catalogue, caught by native review).
         $validated = $request->validate([
             // The provider to query: `heygen`, `tavus`, `cartesia` or `elevenlabs`.
-            'provider' => ['required', 'string', 'in:heygen,tavus,cartesia,elevenlabs'],
-            'resource' => ['required', 'string', 'in:voice,avatar,replica,pal'],
+            'provider' => ['required', 'string', 'in:heygen,tavus,cartesia,elevenlabs,hr_avatar', HrAvatarConnection::unavailableProviderRule()],
+            'resource' => ['required', 'string', 'in:voice,avatar,replica,pal,avatar_config'],
             // Keep only genuinely Italian voices (`italian` = native). The
             // list is already sorted Italian-first without it.
             'italian_only' => ['sometimes', 'boolean'],
@@ -209,7 +211,10 @@ final class AvatarTemplateController extends Controller
             ]);
         }
 
-        $catalogue = AvatarProviderCatalogue::fetch($provider, $resource);
+        // HR-Avatar configs are listed per organization; every other catalogue is the platform's own account.
+        $organizationId = $provider === HrAvatarConnection::PROVIDER ? app(TenantResolver::class)->getOrgId() : null;
+
+        $catalogue = AvatarProviderCatalogue::fetch($provider, $resource, false, $organizationId);
 
         if ($request->boolean('italian_only')) {
             $catalogue['items'] = array_values(array_filter(
