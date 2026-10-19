@@ -1,0 +1,19 @@
+{
+    "session_id": "<id>",
+    "provider": "tavus",
+    "audio_only": false,
+    "provider_token": null,
+    "conversation_url": "https://tavus.example.test/golden-tavus-conversation",
+    "question_context": {
+        "competency_code": "HRA1",
+        "question_index": 0,
+        "end_phrase": "Let's move on to the next question.",
+        "final_phrase": "Thank you for your time.",
+        "prompt_version": "conv-2026-10-10",
+        "competency_ordinal": 1,
+        "total_competencies": 2
+    },
+    "interview_max_seconds": 3600,
+    "answer_min_seconds": 90,
+    "answer_max_seconds": 150
+}
