@@ -364,7 +364,7 @@ final class AvatarTemplateController extends Controller
             // Literal list — see catalogue()'s validation for why implode(self::PROVIDERS) is not used.
             'provider' => ['required', 'string', 'in:heygen,tavus,hr_avatar', HrAvatarConnection::unavailableProviderRule()],
             'config' => ['required_unless:provider,hr_avatar', 'array'],
-            'hr_avatar_config_id' => ['required_if:provider,hr_avatar', 'nullable', 'string', 'max:64', 'regex:/^avc_[0-9A-Za-z]+$/'],
+            'hr_avatar_config_id' => ['required_if:provider,hr_avatar', 'nullable', 'string', 'max:'.HrAvatarConnection::CONFIG_ID_MAX_LENGTH, 'regex:'.HrAvatarConnection::CONFIG_ID_REGEX],
             // Bind a language model to the template. `llm_model_id` and `llm_credential_id` are both set or both null.
             'llm_model_id' => ['sometimes', 'nullable', 'integer', 'prohibited_if:provider,hr_avatar'],
             'llm_credential_id' => ['sometimes', 'nullable', 'integer', 'prohibited_if:provider,hr_avatar'],
@@ -372,16 +372,18 @@ final class AvatarTemplateController extends Controller
     }
 
     /**
+     * The update rules of an organization template. `hr_avatar_config_id` is accepted on every provider on
+     * purpose: the export command links heygen and tavus templates to an HR-Avatar config, and the link is
+     * ignored by their provider behaviour. Only an `hr_avatar` template must keep it
+     * (`assertHrAvatarWriteAllowed()`).
+     *
      * @return array<string, list<mixed>>
      */
     private function organizationTemplateUpdateRules(): array
     {
         return [
             ...$this->templateUpdateRules(),
-            // Accepted on every provider on purpose: the export command links heygen and tavus templates to an
-            // HR-Avatar config, and the link is ignored by their provider behaviour. Only an `hr_avatar`
-            // template must keep it (`assertHrAvatarWriteAllowed()`).
-            'hr_avatar_config_id' => ['sometimes', 'nullable', 'string', 'max:64', 'regex:/^avc_[0-9A-Za-z]+$/'],
+            'hr_avatar_config_id' => ['sometimes', 'nullable', 'string', 'max:'.HrAvatarConnection::CONFIG_ID_MAX_LENGTH, 'regex:'.HrAvatarConnection::CONFIG_ID_REGEX],
         ];
     }
 

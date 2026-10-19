@@ -20,6 +20,11 @@ final class HrAvatarConnection
 {
     public const PROVIDER = 'hr_avatar';
 
+    /** The one format of an HR-Avatar config id, wherever one is accepted, stored or read back. */
+    public const CONFIG_ID_REGEX = '/^avc_[0-9A-Za-z]+$/';
+
+    public const CONFIG_ID_MAX_LENGTH = 64;
+
     private const VARIABLES = [
         'base_url' => 'HR_AVATAR_BASE_URL',
         'secret_key' => 'HR_AVATAR_SECRET_KEY',
@@ -78,6 +83,13 @@ final class HrAvatarConnection
             ->withToken(self::secretKey())
             ->acceptJson()
             ->timeout(15);
+    }
+
+    public static function isConfigId(mixed $value): bool
+    {
+        return is_string($value)
+            && strlen($value) <= self::CONFIG_ID_MAX_LENGTH
+            && preg_match(self::CONFIG_ID_REGEX, $value) === 1;
     }
 
     /** Opaque, stable attribution value for an organization: no name, no personal data. */

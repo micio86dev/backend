@@ -2317,6 +2317,12 @@
                                                             "model_key",
                                                             "credential_name"
                                                         ]
+                                                    },
+                                                    "hr_avatar_config_id": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
                                                     }
                                                 },
                                                 "required": [
@@ -2327,7 +2333,8 @@
                                                     "persona",
                                                     "answer_min_seconds",
                                                     "answer_max_seconds",
-                                                    "llm"
+                                                    "llm",
+                                                    "hr_avatar_config_id"
                                                 ]
                                             }
                                         }

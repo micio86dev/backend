@@ -13,9 +13,12 @@ declare(strict_types=1);
 
 use App\Http\Resources\AvatarTemplateResource;
 use App\Http\Resources\PlatformAvatarTemplateResource;
+use App\Models\AvatarTemplate;
 use App\Models\Organization;
 use App\PublicApi\Serializers\InterviewSerializer;
 use App\PublicApi\Serializers\ProjectSerializer;
+use App\Support\AvatarTemplates\TemplateDocument;
+use App\Support\Tenancy\TenantContextScope;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
@@ -63,6 +66,16 @@ test('T-EXPOSE-001: PlatformAvatarTemplate — the inherited key is classified, 
         (new PlatformAvatarTemplateResource($linked, $usage))->toArray(request()),
         (new PlatformAvatarTemplateResource($bare, $usage))->toArray(request()),
     ))->toBe(hreClassified('PlatformAvatarTemplate'));
+});
+
+test('T-EXPOSE-001: AvatarTemplateExport — the export document gains exactly the classified key', function (): void {
+    $org = Organization::factory()->create();
+    $linked = hraSeedTemplate($org, ['name' => 'Linked']);
+    $bare = hraSeedTemplate($org, ['name' => 'Bare', 'hr_avatar_config_id' => null]);
+
+    $export = fn (AvatarTemplate $template): array => TemplateDocument::export(TenantContextScope::runFor($org->id, fn () => AvatarTemplate::query()->whereKey($template->id)->get()));
+
+    expect(hreGained($export($linked), $export($bare)))->toBe(hreClassified('AvatarTemplateExport'));
 });
 
 test('T-EXPOSE-001: InterviewStart — an hr_avatar start gains exactly the classified join inputs over the recorded heygen start', function (): void {

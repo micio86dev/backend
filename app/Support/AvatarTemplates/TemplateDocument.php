@@ -39,21 +39,31 @@ final class TemplateDocument
         return [
             'schema' => self::SCHEMA,
             'exported_at' => now()->toIso8601String(),
-            'templates' => $templates->map(fn (AvatarTemplate $t): array => [
-                'name' => $t->name,
-                'description' => $t->description,
-                'provider' => $t->provider,
-                'config' => $t->config,
-                // Persona is optional: a template may be pure provider config.
-                'persona' => $t->persona ?? null,
-                'answer_min_seconds' => $t->answer_min_seconds,
-                'answer_max_seconds' => $t->answer_max_seconds,
-                // The language model binding, by model key and credential name; `null` when the template has none.
-                'llm' => $t->llm_model_id === null ? null : [
-                    'model_key' => $t->llmModel?->key,
-                    'credential_name' => $t->llmCredential?->name,
-                ],
-            ])->values()->all(),
+            'templates' => $templates->map(function (AvatarTemplate $t): array {
+                $entry = [
+                    'name' => $t->name,
+                    'description' => $t->description,
+                    'provider' => $t->provider,
+                    'config' => $t->config,
+                    // Persona is optional: a template may be pure provider config.
+                    'persona' => $t->persona ?? null,
+                    'answer_min_seconds' => $t->answer_min_seconds,
+                    'answer_max_seconds' => $t->answer_max_seconds,
+                    // The language model binding, by model key and credential name; `null` when the template has none.
+                    'llm' => $t->llm_model_id === null ? null : [
+                        'model_key' => $t->llmModel?->key,
+                        'credential_name' => $t->llmCredential?->name,
+                    ],
+                ];
+
+                // The opaque HR-Avatar config id, only when one exists: a document without it is byte-for-byte
+                // what it was before the member existed.
+                if ($t->hr_avatar_config_id !== null) {
+                    $entry['hr_avatar_config_id'] = $t->hr_avatar_config_id;
+                }
+
+                return $entry;
+            })->values()->all(),
         ];
     }
 
@@ -66,8 +76,11 @@ final class TemplateDocument
      * the job of splitting JSON by hand onto the operator; collapsing it would
      * lose a block.
      *
+     * `hr_avatar_config_id` is carried raw (any type) so the importer can refuse a malformed one; it is null when
+     * the entry has none.
+     *
      * @param  array<string, mixed>  $entry
-     * @return list<array{name: string, description: string|null, provider: string, config: array<string, mixed>, persona: array<string, mixed>|null, answer_min_seconds: mixed, answer_max_seconds: mixed, llm: array{model_key: string, credential_name: string}|null}>
+     * @return list<array{name: string, description: string|null, provider: string, config: array<string, mixed>, persona: array<string, mixed>|null, answer_min_seconds: mixed, answer_max_seconds: mixed, llm: array{model_key: string, credential_name: string}|null, hr_avatar_config_id: mixed}>
      */
     public static function flatten(array $entry): array
     {
@@ -88,6 +101,7 @@ final class TemplateDocument
                 'answer_min_seconds' => array_key_exists('answer_min_seconds', $entry) ? $entry['answer_min_seconds'] : 90,
                 'answer_max_seconds' => array_key_exists('answer_max_seconds', $entry) ? $entry['answer_max_seconds'] : 150,
                 'llm' => self::flattenLlm($entry['llm'] ?? null),
+                'hr_avatar_config_id' => $entry['hr_avatar_config_id'] ?? null,
             ]];
         }
 
@@ -112,6 +126,7 @@ final class TemplateDocument
                 'answer_min_seconds' => 90,
                 'answer_max_seconds' => 150,
                 'llm' => null,
+                'hr_avatar_config_id' => null,
             ];
         }
 
