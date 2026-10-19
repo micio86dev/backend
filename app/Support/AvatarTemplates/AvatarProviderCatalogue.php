@@ -174,8 +174,8 @@ final class AvatarProviderCatalogue
             return $cached;
         }
 
-        // Set by a paged fetch that stopped at its safety cap while the vendor still had more: the result is
-        // served, but never cached as if it were the whole inventory.
+        // Set by a paged fetch that stopped at its safety cap while the vendor still had more, or whose
+        // secondary list failed: the result is served, but never cached as if it were the whole inventory.
         $truncated = false;
 
         try {
@@ -236,13 +236,13 @@ final class AvatarProviderCatalogue
         // rejects an unknown provider/resource with 422 before reaching here —
         // this is a defensive floor for any other caller.
         $items = match ("{$provider}:{$resource}") {
-            'tavus:voice' => self::tavusVoices(),
-            'tavus:replica' => self::tavusReplicas(),
-            'tavus:pal' => self::tavusPals(),
-            'heygen:voice' => self::heygenVoices(),
-            'heygen:avatar' => self::heygenAvatars(),
-            'cartesia:voice' => self::cartesiaVoices(),
-            'elevenlabs:voice' => self::elevenlabsVoices(),
+            'tavus:voice' => self::tavusVoices($truncated),
+            'tavus:replica' => self::tavusReplicas($truncated),
+            'tavus:pal' => self::tavusPals($truncated),
+            'heygen:voice' => self::heygenVoices($truncated),
+            'heygen:avatar' => self::heygenAvatars($truncated),
+            'cartesia:voice' => self::cartesiaVoices($truncated),
+            'elevenlabs:voice' => self::elevenlabsVoices($truncated),
             'hr_avatar:avatar_config' => self::hrAvatarConfigs($organizationId, $truncated),
             default => throw new CatalogueFetchException('unsupported_catalogue'),
         };
@@ -260,9 +260,9 @@ final class AvatarProviderCatalogue
      *
      * @return list<array<string, mixed>>
      */
-    private static function tavusVoices(): array
+    private static function tavusVoices(bool &$truncated = false): array
     {
-        $rows = self::tavusPaged('/voices', ['source' => 'all']);
+        $rows = self::tavusPaged('/voices', ['source' => 'all'], $truncated);
 
         return array_map(
             fn (array $row): array => self::entry(
@@ -286,9 +286,9 @@ final class AvatarProviderCatalogue
      *
      * @return list<array<string, mixed>>
      */
-    private static function tavusReplicas(): array
+    private static function tavusReplicas(bool &$truncated = false): array
     {
-        $rows = self::tavusPaged('/faces', ['verbose' => 'true']);
+        $rows = self::tavusPaged('/faces', ['verbose' => 'true'], $truncated);
 
         return array_map(
             fn (array $row): array => self::entry(
@@ -328,11 +328,11 @@ final class AvatarProviderCatalogue
      *
      * @return list<array<string, mixed>>
      */
-    private static function tavusPals(): array
+    private static function tavusPals(bool &$truncated = false): array
     {
-        $rows = self::tavusPaged('/pals', []);
-        $userIds = self::tavusPalIds('user');
-        $systemIds = self::tavusPalIds('system');
+        $rows = self::tavusPaged('/pals', [], $truncated);
+        $userIds = self::tavusPalIds('user', $truncated);
+        $systemIds = self::tavusPalIds('system', $truncated);
 
         return array_map(
             function (array $row) use ($userIds, $systemIds): array {
@@ -360,16 +360,19 @@ final class AvatarProviderCatalogue
      *
      * @return list<string>|null
      */
-    private static function tavusPalIds(string $personaType): ?array
+    private static function tavusPalIds(string $personaType, bool &$truncated = false): ?array
     {
         try {
-            $rows = self::tavusPaged('/pals', ['persona_type' => $personaType]);
+            $rows = self::tavusPaged('/pals', ['persona_type' => $personaType], $truncated);
         } catch (CatalogueFetchException $e) {
             Log::warning('AvatarProviderCatalogue: persona_type list failed', [
                 'persona_type' => $personaType,
                 'code' => $e->safeCode,
                 'http_status' => $e->httpStatus,
             ]);
+
+            // `editable` is unknown for every persona until the list is back: serve it, do not cache it for a day.
+            $truncated = true;
 
             return null;
         }
@@ -392,13 +395,13 @@ final class AvatarProviderCatalogue
      *
      * @return list<array<string, mixed>>
      */
-    private static function heygenVoices(): array
+    private static function heygenVoices(bool &$truncated = false): array
     {
         // Private voices are the operator's own bindings: their absence must
         // not hide the public catalogue, so a failure there is tolerated.
         $rows = array_merge(
-            self::heygenPaged('/voices', ['voice_type' => 'public']),
-            self::heygenPaged('/voices', ['voice_type' => 'private'], optional: true),
+            self::heygenPaged('/voices', ['voice_type' => 'public'], truncated: $truncated),
+            self::heygenPaged('/voices', ['voice_type' => 'private'], optional: true, truncated: $truncated),
         );
 
         return array_map(
@@ -429,11 +432,11 @@ final class AvatarProviderCatalogue
      *
      * @return list<array<string, mixed>>
      */
-    private static function heygenAvatars(): array
+    private static function heygenAvatars(bool &$truncated = false): array
     {
         $rows = array_merge(
-            self::heygenPaged('/avatars/public'),
-            self::heygenPaged('/avatars', optional: true),
+            self::heygenPaged('/avatars/public', truncated: $truncated),
+            self::heygenPaged('/avatars', optional: true, truncated: $truncated),
         );
 
         $usable = array_filter(
@@ -465,7 +468,7 @@ final class AvatarProviderCatalogue
      *
      * @return list<array<string, mixed>>
      */
-    private static function cartesiaVoices(): array
+    private static function cartesiaVoices(bool &$truncated = false): array
     {
         $rows = [];
         $startingAfter = null;
@@ -491,6 +494,10 @@ final class AvatarProviderCatalogue
 
             if ($isList || ($body['has_more'] ?? false) !== true || ! is_string($next) || $next === '') {
                 break;
+            }
+
+            if ($page === self::MAX_PAGES - 1) {
+                self::noteTruncated('cartesia', '/voices', $truncated);
             }
 
             $startingAfter = $next;
@@ -524,7 +531,7 @@ final class AvatarProviderCatalogue
      *
      * @return list<array<string, mixed>>
      */
-    private static function elevenlabsVoices(): array
+    private static function elevenlabsVoices(bool &$truncated = false): array
     {
         $rows = [];
         $token = null;
@@ -545,6 +552,10 @@ final class AvatarProviderCatalogue
 
             if (($body['has_more'] ?? false) !== true || ! is_string($next) || $next === '') {
                 break;
+            }
+
+            if ($page === self::MAX_PAGES - 1) {
+                self::noteTruncated('elevenlabs', '/v2/voices', $truncated);
             }
 
             $token = $next;
@@ -584,7 +595,7 @@ final class AvatarProviderCatalogue
         $accent = self::stringOrNull($own['accent'] ?? null) ?? self::stringOrNull($labels['accent'] ?? null);
 
         $italian = null;
-        if ($language === 'it' || mb_strtolower((string) ($labels['accent'] ?? '')) === 'italian') {
+        if ($language === 'it' || mb_strtolower(self::stringOrEmpty($labels['accent'] ?? null)) === 'italian') {
             $italian = 'native';
         } else {
             foreach ($verified as $entry) {
@@ -719,7 +730,7 @@ final class AvatarProviderCatalogue
      * @param  array<string, string>  $query
      * @return list<array<string, mixed>>
      */
-    private static function tavusPaged(string $path, array $query): array
+    private static function tavusPaged(string $path, array $query, bool &$truncated = false): array
     {
         $rows = [];
 
@@ -740,6 +751,10 @@ final class AvatarProviderCatalogue
             if ($batch === [] || count($batch) < self::PAGE_SIZE || (is_int($total) && count($rows) >= $total)) {
                 break;
             }
+
+            if ($page === self::MAX_PAGES) {
+                self::noteTruncated('tavus', $path, $truncated);
+            }
         }
 
         return $rows;
@@ -756,7 +771,7 @@ final class AvatarProviderCatalogue
      * @param  array<string, string>  $query
      * @return list<array<string, mixed>>
      */
-    private static function heygenPaged(string $path, array $query = [], bool $optional = false): array
+    private static function heygenPaged(string $path, array $query = [], bool $optional = false, bool &$truncated = false): array
     {
         $rows = [];
 
@@ -779,11 +794,18 @@ final class AvatarProviderCatalogue
                 if ($batch === [] || ! is_string($next) || $next === '') {
                     break;
                 }
+
+                if ($page === self::MAX_PAGES) {
+                    self::noteTruncated('heygen', $path, $truncated);
+                }
             }
         } catch (CatalogueFetchException $e) {
             if (! $optional) {
                 throw $e;
             }
+
+            // The public catalogue is still served, but without this list it is not the whole inventory.
+            $truncated = true;
 
             Log::warning('AvatarProviderCatalogue: optional list failed', [
                 'path' => $path,
@@ -792,6 +814,22 @@ final class AvatarProviderCatalogue
         }
 
         return $rows;
+    }
+
+    /**
+     * A paged fetch stopped at `MAX_PAGES` while the vendor still offered more: the list is incomplete, so the
+     * caller does not cache it. The warning carries the provider, the list path and the cap only, never a
+     * key or a cursor.
+     */
+    private static function noteTruncated(string $provider, string $path, bool &$truncated): void
+    {
+        $truncated = true;
+
+        Log::warning('AvatarProviderCatalogue: catalogue list truncated at the page cap', [
+            'provider' => $provider,
+            'path' => $path,
+            'max_pages' => self::MAX_PAGES,
+        ]);
     }
 
     /**
