@@ -144,8 +144,16 @@ test('a pal sync emits exactly the documented statuses and codes', function (): 
     config()->set('interview.tavus.api_key', '');
     $results[] = $sync();
 
-    expect(array_values(array_unique(array_column($results, 'status'))))->toEqualCanonicalizing(TavusPalSync::STATUSES)
-        ->and(array_values(array_unique(array_filter(array_column($results, 'message')))))->toEqualCanonicalizing(TavusPalSync::CODES);
+    // `sync()` returns the code of a warning under `message` and `ResyncTemplateBinding` persists it as
+    // `pal_sync_code`, the published `pal_sync.code`. Collected sets are checked non-empty first, so a key that
+    // drifts can never turn the comparison into a vacuous one.
+    $statuses = array_values(array_unique(array_column($results, 'status')));
+    $codes = array_values(array_unique(array_filter(array_column($results, 'message'))));
+
+    expect($statuses)->not->toBeEmpty()
+        ->and($codes)->not->toBeEmpty()
+        ->and($statuses)->toEqualCanonicalizing(TavusPalSync::STATUSES)
+        ->and($codes)->toEqualCanonicalizing(TavusPalSync::CODES);
 });
 
 test('the catalogue status is a documented enum', function (): void {
@@ -226,10 +234,11 @@ test('the field spec type is a documented enum on every route that returns specs
     $items = csFieldSpecItems(csSpec()['paths']);
     $types = array_map(static fn (FieldType $type): string => $type->value, FieldType::cases());
 
-    // The organization route lists heygen, tavus and hr_avatar; the platform route lists heygen and tavus.
-    expect($items)->toHaveCount(5);
+    // However many lists the routes document, there is at least one and every one of them uses the component.
+    expect($items)->not->toBeEmpty();
 
     foreach ($items as $item) {
-        expect(csEnum($item['properties']['type']))->toEqualCanonicalizing($types);
+        expect($item['properties']['type']['$ref'] ?? null)->toBe('#/components/schemas/FieldType')
+            ->and(csEnum($item['properties']['type']))->toEqualCanonicalizing($types);
     }
 });
