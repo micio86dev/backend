@@ -92,9 +92,34 @@ final class AvatarProviderCatalogue
     /**
      * The `entry()` shape as a PHPDoc type, for `#[Response]` on the route that returns the catalogue. Scramble
      * cannot infer it through the helper-built arrays and would document `items` as an untyped list. `editable`
-     * is the one optional member (a Tavus persona only); `italian` is `native`, `multilingual` or null.
+     * is the one optional member (a Tavus persona only); `italian` is `native`, `multilingual` or null (literal union below; `ITALIAN_VALUES` is pinned to it by test).
      */
-    public const ITEM_DOC_SHAPE = 'array{id: string, provider: string, label: string, name: string, language: string|null, locale: string|null, accent: string|null, italian: string|null, preview_image_url: string|null, preview_audio_url: string|null, preview_audio_via_api: bool, preview_video_url: string|null, editable?: bool|null}';
+    public const ITEM_DOC_SHAPE = "array{id: string, provider: string, label: string, name: string, language: string|null, locale: string|null, accent: string|null, italian: 'native'|'multilingual'|null, preview_image_url: string|null, preview_audio_url: string|null, preview_audio_via_api: bool, preview_video_url: string|null, editable?: bool|null}";
+
+    /**
+     * The closed sets a catalogue answer is made of, for the OpenAPI document (`*_UNION` is the same set as a
+     * literal union, since a PHPDoc shape cannot read an array). `AvatarTemplateClosedSetsDocumentedTest` pins
+     * the arrays to what `fetch()` really returns and to the published `enum`s. `ERROR_CODES` are the codes of a
+     * `provider_error` status; `ITALIAN_VALUES` are the non-null values of an item's `italian`.
+     */
+    public const STATUSES = ['ok', 'empty', 'provider_error'];
+
+    public const STATUS_UNION = "'ok'|'empty'|'provider_error'";
+
+    public const ERROR_CODES = [
+        'provider_key_missing',
+        'provider_unauthorized',
+        'provider_rate_limited',
+        'provider_unavailable',
+        'provider_unreachable',
+        'provider_rejected',
+        'provider_bad_response',
+        'unsupported_catalogue',
+    ];
+
+    public const ERROR_CODE_UNION = "'provider_key_missing'|'provider_unauthorized'|'provider_rate_limited'|'provider_unavailable'|'provider_unreachable'|'provider_rejected'|'provider_bad_response'|'unsupported_catalogue'";
+
+    public const ITALIAN_VALUES = ['native', 'multilingual'];
 
     private const PAGE_SIZE = 100;
 

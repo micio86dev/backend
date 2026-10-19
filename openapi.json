@@ -1280,7 +1280,7 @@
                                                                 "type": "string"
                                                             },
                                                             "type": {
-                                                                "type": "string"
+                                                                "$ref": "#/components/schemas/FieldType"
                                                             },
                                                             "label_key": {
                                                                 "type": "string"
@@ -1371,7 +1371,7 @@
                                                                 "type": "string"
                                                             },
                                                             "type": {
-                                                                "type": "string"
+                                                                "$ref": "#/components/schemas/FieldType"
                                                             },
                                                             "label_key": {
                                                                 "type": "string"
@@ -1462,7 +1462,7 @@
                                                                 "type": "string"
                                                             },
                                                             "type": {
-                                                                "type": "string"
+                                                                "$ref": "#/components/schemas/FieldType"
                                                             },
                                                             "label_key": {
                                                                 "type": "string"
@@ -1628,7 +1628,12 @@
                                             "type": "object",
                                             "properties": {
                                                 "status": {
-                                                    "type": "string"
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "ok",
+                                                        "empty",
+                                                        "provider_error"
+                                                    ]
                                                 },
                                                 "items": {
                                                     "type": "array",
@@ -1669,6 +1674,11 @@
                                                                 "type": [
                                                                     "string",
                                                                     "null"
+                                                                ],
+                                                                "enum": [
+                                                                    "native",
+                                                                    "multilingual",
+                                                                    null
                                                                 ]
                                                             },
                                                             "preview_image_url": {
@@ -1716,7 +1726,17 @@
                                                     }
                                                 },
                                                 "code": {
-                                                    "type": "string"
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "provider_key_missing",
+                                                        "provider_unauthorized",
+                                                        "provider_rate_limited",
+                                                        "provider_unavailable",
+                                                        "provider_unreachable",
+                                                        "provider_rejected",
+                                                        "provider_bad_response",
+                                                        "unsupported_catalogue"
+                                                    ]
                                                 }
                                             },
                                             "required": [
@@ -8971,7 +8991,7 @@
                                                                 "type": "string"
                                                             },
                                                             "type": {
-                                                                "type": "string"
+                                                                "$ref": "#/components/schemas/FieldType"
                                                             },
                                                             "label_key": {
                                                                 "type": "string"
@@ -9062,7 +9082,7 @@
                                                                 "type": "string"
                                                             },
                                                             "type": {
-                                                                "type": "string"
+                                                                "$ref": "#/components/schemas/FieldType"
                                                             },
                                                             "label_key": {
                                                                 "type": "string"
@@ -15059,12 +15079,29 @@
                                 "type": [
                                     "string",
                                     "null"
+                                ],
+                                "enum": [
+                                    "skipped",
+                                    "synced",
+                                    "warning",
+                                    null
                                 ]
                             },
                             "code": {
                                 "type": [
                                     "string",
                                     "null"
+                                ],
+                                "enum": [
+                                    "tavus_key_missing",
+                                    "pal_id_missing",
+                                    "pal_not_editable",
+                                    "pal_sync_rejected",
+                                    "pal_sync_unauthorized",
+                                    "pal_not_found",
+                                    "pal_sync_failed",
+                                    "pal_sync_unreachable",
+                                    null
                                 ]
                             },
                             "synced_at": {
@@ -15893,6 +15930,17 @@
                     ]
                 },
                 "title": "EvaluationResource"
+            },
+            "FieldType": {
+                "type": "string",
+                "description": "How a template field is entered and validated: free `text`, a `number` within `min`/`max`, one of a `select`'s `options`, or a `checkbox`.\n",
+                "enum": [
+                    "text",
+                    "number",
+                    "select",
+                    "checkbox"
+                ],
+                "title": "FieldType"
             },
             "ForgotPasswordRequest": {
                 "type": "object",
@@ -16901,12 +16949,29 @@
                                 "type": [
                                     "string",
                                     "null"
+                                ],
+                                "enum": [
+                                    "skipped",
+                                    "synced",
+                                    "warning",
+                                    null
                                 ]
                             },
                             "code": {
                                 "type": [
                                     "string",
                                     "null"
+                                ],
+                                "enum": [
+                                    "tavus_key_missing",
+                                    "pal_id_missing",
+                                    "pal_not_editable",
+                                    "pal_sync_rejected",
+                                    "pal_sync_unauthorized",
+                                    "pal_not_found",
+                                    "pal_sync_failed",
+                                    "pal_sync_unreachable",
+                                    null
                                 ]
                             },
                             "synced_at": {

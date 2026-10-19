@@ -45,6 +45,6 @@ test('every member the export always emits is required, and every required membe
         ->assertOk()->json('templates.0');
     $schema = hraExportEntrySchema();
 
-    expect($schema['required'])->toBe(array_keys($entry))
+    expect($schema['required'])->toEqualCanonicalizing(array_keys($entry))
         ->and(array_keys($schema['properties']))->toContain(...array_keys($entry));
 });

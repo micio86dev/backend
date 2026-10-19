@@ -20,7 +20,7 @@ final readonly class FieldSpec
      * Scramble cannot infer it through the helper-built array and would document the body as a string.
      * Optional keys are the ones `toArray()` drops when null/false.
      */
-    public const DOC_SHAPE = 'array{key: string, type: string, label_key: string, hint_key?: string, required?: bool, options?: list<string>, min?: int|float, max?: int|float, step?: int|float, catalogue_resource?: string, options_depend_on?: string, options_by_value?: array<string, list<string>>, superadmin_only?: bool, superseded_by_key?: string, superseded_by_values?: list<string>}';
+    public const DOC_SHAPE = 'array{key: string, type: \App\Support\AvatarTemplates\FieldType, label_key: string, hint_key?: string, required?: bool, options?: list<string>, min?: int|float, max?: int|float, step?: int|float, catalogue_resource?: string, options_depend_on?: string, options_by_value?: array<string, list<string>>, superadmin_only?: bool, superseded_by_key?: string, superseded_by_values?: list<string>}';
 
     /**
      * @param  list<string>|null  $options  Allowed values for a select.
