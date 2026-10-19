@@ -1452,6 +1452,97 @@
                                                             "label_key"
                                                         ]
                                                     }
+                                                },
+                                                "hr_avatar": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "key": {
+                                                                "type": "string"
+                                                            },
+                                                            "type": {
+                                                                "type": "string"
+                                                            },
+                                                            "label_key": {
+                                                                "type": "string"
+                                                            },
+                                                            "hint_key": {
+                                                                "type": "string"
+                                                            },
+                                                            "required": {
+                                                                "type": "boolean"
+                                                            },
+                                                            "options": {
+                                                                "type": "array",
+                                                                "items": {
+                                                                    "type": "string"
+                                                                }
+                                                            },
+                                                            "min": {
+                                                                "anyOf": [
+                                                                    {
+                                                                        "type": "integer"
+                                                                    },
+                                                                    {
+                                                                        "type": "number"
+                                                                    }
+                                                                ]
+                                                            },
+                                                            "max": {
+                                                                "anyOf": [
+                                                                    {
+                                                                        "type": "integer"
+                                                                    },
+                                                                    {
+                                                                        "type": "number"
+                                                                    }
+                                                                ]
+                                                            },
+                                                            "step": {
+                                                                "anyOf": [
+                                                                    {
+                                                                        "type": "integer"
+                                                                    },
+                                                                    {
+                                                                        "type": "number"
+                                                                    }
+                                                                ]
+                                                            },
+                                                            "catalogue_resource": {
+                                                                "type": "string"
+                                                            },
+                                                            "options_depend_on": {
+                                                                "type": "string"
+                                                            },
+                                                            "options_by_value": {
+                                                                "type": "object",
+                                                                "additionalProperties": {
+                                                                    "type": "array",
+                                                                    "items": {
+                                                                        "type": "string"
+                                                                    }
+                                                                }
+                                                            },
+                                                            "superadmin_only": {
+                                                                "type": "boolean"
+                                                            },
+                                                            "superseded_by_key": {
+                                                                "type": "string"
+                                                            },
+                                                            "superseded_by_values": {
+                                                                "type": "array",
+                                                                "items": {
+                                                                    "type": "string"
+                                                                }
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "key",
+                                                            "type",
+                                                            "label_key"
+                                                        ]
+                                                    }
                                                 }
                                             },
                                             "required": [
@@ -1726,15 +1817,15 @@
                                         "description": "Literal list \u2014 see catalogue()'s validation for why implode(self::PROVIDERS) is not used.",
                                         "enum": [
                                             "heygen",
-                                            "tavus"
+                                            "tavus",
+                                            "hr_avatar"
                                         ]
                                     },
                                     "config": {
                                         "type": "array",
                                         "items": {
                                             "type": "string"
-                                        },
-                                        "minItems": 1
+                                        }
                                     },
                                     "llm_model_id": {
                                         "type": [
@@ -1769,12 +1860,19 @@
                                                 ]
                                             }
                                         }
+                                    },
+                                    "hr_avatar_config_id": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "pattern": "^avc_[0-9A-Za-z]+$",
+                                        "maxLength": 64
                                     }
                                 },
                                 "required": [
                                     "name",
-                                    "provider",
-                                    "config"
+                                    "provider"
                                 ]
                             }
                         }
@@ -1925,6 +2023,14 @@
                                                 ]
                                             }
                                         }
+                                    },
+                                    "hr_avatar_config_id": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "pattern": "^avc_[0-9A-Za-z]+$",
+                                        "maxLength": 64
                                     }
                                 }
                             }
@@ -14909,6 +15015,9 @@
                     },
                     "answer_max_seconds": {
                         "type": "integer"
+                    },
+                    "hr_avatar_config_id": {
+                        "type": "string"
                     }
                 },
                 "required": [
@@ -16748,6 +16857,9 @@
                     },
                     "answer_max_seconds": {
                         "type": "integer"
+                    },
+                    "hr_avatar_config_id": {
+                        "type": "string"
                     },
                     "usage": {
                         "type": "object",

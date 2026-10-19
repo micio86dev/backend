@@ -20,10 +20,13 @@ declare(strict_types=1);
  * With no fixture the comparison fails ("fixture missing"): that is the RED state.
  */
 
+use App\Models\Organization;
+use App\Support\AvatarTemplates\ProviderFieldSpecs;
 use GuzzleHttp\Promise\PromiseInterface;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
+use Tests\Helpers\AvatarTemplates\TemplateActors;
 
 uses(RefreshDatabase::class);
 
@@ -132,3 +135,21 @@ test('a :dataset start sends no request to an HR-Avatar host', function (string 
     Http::assertSent(fn ($request): bool => true);
     Http::assertNotSent(fn ($request): bool => str_contains($request->url(), HRA_GOLDEN_HOST));
 })->with('golden_providers')->with('hr_avatar_settings');
+
+test('the field specs are exactly the pre-change object while the integration is unavailable', function (bool $partiallySet): void {
+    if ($partiallySet) {
+        config(['hr_avatar.base_url' => 'https://'.HRA_GOLDEN_HOST]);
+    }
+
+    $token = TemplateActors::token('acting', Organization::factory()->create());
+
+    $data = $this->withToken($token)->getJson('/api/avatar-templates/field-specs')->assertOk()->json('data');
+
+    expect($data)->toBe([
+        'heygen' => array_map(fn ($field): array => $field->toArray(), ProviderFieldSpecs::forCaller('heygen', true)),
+        'tavus' => array_map(fn ($field): array => $field->toArray(), ProviderFieldSpecs::forCaller('tavus', true)),
+    ]);
+})->with([
+    'nothing set' => [false],
+    'only the base URL set' => [true],
+]);

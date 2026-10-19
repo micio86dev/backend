@@ -18,7 +18,9 @@ use App\Models\Participant;
 use App\Models\Project;
 use App\Services\Provider\QuestionContext;
 use App\Support\Jwt\CandidateTokenFactory;
+use App\Support\Tenancy\TenantContextScope;
 use Illuminate\Support\Facades\DB;
+use Tests\Helpers\AvatarTemplates\TemplateActors;
 
 /**
  * An organization, a project of `$competencies` interviewable competencies
@@ -89,4 +91,41 @@ function hraQuestionContext(array $overrides = []): QuestionContext
         'openingText' => 'Hello, shall we begin?',
         'language' => 'it',
     ], $overrides));
+}
+
+/**
+ * Make the HR-Avatar integration available: all three settings present and well formed.
+ * The sentinel secret lets a test prove it never reaches a response, a log line or an export.
+ */
+function hraMakeAvailable(): void
+{
+    config(['hr_avatar' => [
+        'base_url' => 'https://hra.example.test',
+        'secret_key' => 'hra_sk_live_SECRETVALUE',
+        'publishable_key' => 'hra_pk_live_PUBLISHABLE',
+    ]]);
+}
+
+/**
+ * An `hr_avatar` template of `$org`, linked to a config unless overridden.
+ *
+ * @param  array<string, mixed>  $attributes
+ */
+function hraSeedTemplate(Organization $org, array $attributes = []): AvatarTemplate
+{
+    return TenantContextScope::runFor($org->id, fn (): AvatarTemplate => AvatarTemplate::create(array_merge([
+        'name' => 'Seeded '.uniqid(),
+        'provider' => 'hr_avatar',
+        'config' => [],
+        'hr_avatar_config_id' => 'avc_01HXYZ',
+    ], $attributes)));
+}
+
+/**
+ * A superadmin acting as `$org`. Managing templates is a platform action since 2026-09-02 (an organization
+ * admin only reads), so this is the principal that writes them.
+ */
+function hraActingToken(Organization $org): string
+{
+    return TemplateActors::token('acting', $org);
 }

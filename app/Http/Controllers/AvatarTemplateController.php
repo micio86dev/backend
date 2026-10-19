@@ -10,8 +10,10 @@ use App\Http\Resources\AvatarTemplateResource;
 use App\Models\AvatarTemplate;
 use App\Models\Project;
 use App\Services\ConversationLlm\HeygenLlmRegistrar;
+use App\Services\Provider\HrAvatarConnection;
 use App\Support\Audit\AuditRecorder;
 use App\Support\AvatarTemplates\AvatarProviderCatalogue;
+use App\Support\AvatarTemplates\ConfigValidator;
 use App\Support\AvatarTemplates\FieldSpec;
 use App\Support\AvatarTemplates\ProviderFieldSpecs;
 use App\Support\Tenancy\TenantResolver;
@@ -135,7 +137,7 @@ final class AvatarTemplateController extends Controller
      * lives. The superadmin-only fields (the external HeyGen voice) are listed
      * for a superadmin and for nobody else.
      */
-    #[ResponseDoc(200, type: 'array{data: array{heygen: list<'.FieldSpec::DOC_SHAPE.'>, tavus: list<'.FieldSpec::DOC_SHAPE.'>}}')]
+    #[ResponseDoc(200, type: 'array{data: array{heygen: list<'.FieldSpec::DOC_SHAPE.'>, tavus: list<'.FieldSpec::DOC_SHAPE.'>, hr_avatar?: list<'.FieldSpec::DOC_SHAPE.'>}}')]
     public function fieldSpecs(): JsonResponse
     {
         $this->authorize('viewAny', AvatarTemplate::class);
@@ -147,6 +149,12 @@ final class AvatarTemplateController extends Controller
                 fn ($field): array => $field->toArray(),
                 ProviderFieldSpecs::forCaller($provider, $this->callerIsSuperadmin()),
             );
+        }
+
+        // The capability signal: `hr_avatar` takes no provider knobs, so its list is empty, and the key
+        // exists only while HR-Avatar is available. Without it the object is exactly what it always was.
+        if (HrAvatarConnection::isAvailable()) {
+            $specs[HrAvatarConnection::PROVIDER] = [];
         }
 
         return response()->json(['data' => $specs]);
@@ -225,7 +233,23 @@ final class AvatarTemplateController extends Controller
     {
         $this->authorize('create', AvatarTemplate::class);
 
-        $validated = $request->validate($this->templateStoreRules());
+        // An `hr_avatar` create reports every field error in ONE 422, so its config errors are computed
+        // first and merged with the rule errors. For heygen and tavus this is `[]`: their two-step order
+        // (rules, then `assertConfigValid()` with its reference checks) is untouched.
+        $configErrors = $this->hrAvatarConfigErrors($request, $request->input('provider'));
+
+        try {
+            $validated = $request->validate($this->organizationTemplateStoreRules(), [
+                'config.required_unless' => __('validation.required', ['attribute' => 'config']),
+            ]);
+        } catch (ValidationException $e) {
+            throw $configErrors === [] ? $e : ValidationException::withMessages(array_merge($e->errors(), $configErrors));
+        }
+
+        $this->failWith($configErrors);
+
+        // `config` is optional for `hr_avatar` only: an omitted one is an empty one.
+        $validated['config'] ??= [];
 
         $validated = array_merge($validated, $this->personaWrite($request, null));
         $this->assertAnswerRangeOrdered($validated);
@@ -261,7 +285,15 @@ final class AvatarTemplateController extends Controller
         $template = AvatarTemplate::findOrFail($id);
         $this->authorize('update', $template);
 
-        $validated = $request->validate($this->templateUpdateRules());
+        $configErrors = $this->hrAvatarConfigErrors($request, $template->provider);
+
+        try {
+            $validated = $request->validate($this->organizationTemplateUpdateRules());
+        } catch (ValidationException $e) {
+            throw $configErrors === [] ? $e : ValidationException::withMessages(array_merge($e->errors(), $configErrors));
+        }
+
+        $this->failWith($configErrors);
 
         $validated = array_merge($validated, $this->personaWrite($request, $template->persona));
         $this->assertAnswerRangeOrdered($validated, $template->answer_min_seconds, $template->answer_max_seconds);
@@ -275,6 +307,10 @@ final class AvatarTemplateController extends Controller
             throw ValidationException::withMessages([
                 'provider' => 'The provider cannot be changed after creation. Create a new template instead.',
             ]);
+        }
+
+        if ($template->provider === HrAvatarConnection::PROVIDER) {
+            $this->assertHrAvatarWriteAllowed($validated);
         }
 
         if (array_key_exists('config', $validated)) {
@@ -309,6 +345,97 @@ final class AvatarTemplateController extends Controller
         }
 
         return (new AvatarTemplateResource($template))->additional($this->recordSync($template));
+    }
+
+    /**
+     * The store rules of an organization template: the shared ones, with `hr_avatar` added. The shared
+     * trait is not changed, because the platform routes use it too and a platform template can never be
+     * `hr_avatar`.
+     *
+     * `config` is `required_unless` so an `hr_avatar` template (which takes no provider knobs) may omit
+     * it; heygen and tavus keep requiring it, with the message they always had (see `store()`).
+     *
+     * @return array<string, list<mixed>>
+     */
+    private function organizationTemplateStoreRules(): array
+    {
+        return [
+            ...$this->templateStoreRules(),
+            // Literal list — see catalogue()'s validation for why implode(self::PROVIDERS) is not used.
+            'provider' => ['required', 'string', 'in:heygen,tavus,hr_avatar', HrAvatarConnection::unavailableProviderRule()],
+            'config' => ['required_unless:provider,hr_avatar', 'array'],
+            'hr_avatar_config_id' => ['required_if:provider,hr_avatar', 'nullable', 'string', 'max:64', 'regex:/^avc_[0-9A-Za-z]+$/'],
+            // Bind a language model to the template. `llm_model_id` and `llm_credential_id` are both set or both null.
+            'llm_model_id' => ['sometimes', 'nullable', 'integer', 'prohibited_if:provider,hr_avatar'],
+            'llm_credential_id' => ['sometimes', 'nullable', 'integer', 'prohibited_if:provider,hr_avatar'],
+        ];
+    }
+
+    /**
+     * @return array<string, list<mixed>>
+     */
+    private function organizationTemplateUpdateRules(): array
+    {
+        return [
+            ...$this->templateUpdateRules(),
+            // Accepted on every provider on purpose: the export command links heygen and tavus templates to an
+            // HR-Avatar config, and the link is ignored by their provider behaviour. Only an `hr_avatar`
+            // template must keep it (`assertHrAvatarWriteAllowed()`).
+            'hr_avatar_config_id' => ['sometimes', 'nullable', 'string', 'max:64', 'regex:/^avc_[0-9A-Za-z]+$/'],
+        ];
+    }
+
+    /**
+     * Every `config.{knob}` problem of an `hr_avatar` write, in the shape `assertConfigValid()` raises
+     * them. An `hr_avatar` template accepts no knob at all, so each key is `unknown`. `[]` for any other
+     * provider and for a `config` that is not an array (the rules report that).
+     *
+     * @return array<string, string>
+     */
+    private function hrAvatarConfigErrors(Request $request, mixed $provider): array
+    {
+        $config = $request->input('config');
+
+        if ($provider !== HrAvatarConnection::PROVIDER || ! is_array($config)) {
+            return [];
+        }
+
+        return collect(ConfigValidator::validate(HrAvatarConnection::PROVIDER, $config))
+            ->mapWithKeys(fn (array $e): array => ["config.{$e['key']}" => $e['code']])
+            ->all();
+    }
+
+    /**
+     * @param  array<string, string>  $errors
+     */
+    private function failWith(array $errors): void
+    {
+        if ($errors !== []) {
+            throw ValidationException::withMessages($errors);
+        }
+    }
+
+    /**
+     * An `hr_avatar` template always names its config, and the BEAI-side LLM binding does not apply to
+     * it (the conversation runs inside HR-Avatar). Checked after the rules, like the provider immutability.
+     *
+     * @param  array<string, mixed>  $validated
+     */
+    private function assertHrAvatarWriteAllowed(array $validated): void
+    {
+        $errors = [];
+
+        if (array_key_exists('hr_avatar_config_id', $validated) && $validated['hr_avatar_config_id'] === null) {
+            $errors['hr_avatar_config_id'] = __('validation.required', ['attribute' => 'hr_avatar_config_id']);
+        }
+
+        foreach (['llm_model_id', 'llm_credential_id'] as $field) {
+            if (($validated[$field] ?? null) !== null) {
+                $errors[$field] = __('validation.prohibited', ['attribute' => $field]);
+            }
+        }
+
+        $this->failWith($errors);
     }
 
     /**
@@ -374,6 +501,14 @@ final class AvatarTemplateController extends Controller
     {
         $template = AvatarTemplate::findOrFail($id);
         $this->authorize('activate', $template);
+
+        // A session on this template would fail closed while HR-Avatar is unavailable, so it is not
+        // offered as the active one. Everything else about the template stays manageable.
+        if ($template->provider === HrAvatarConnection::PROVIDER && ! HrAvatarConnection::isAvailable()) {
+            throw ValidationException::withMessages([
+                'provider' => __('validation.in', ['attribute' => 'provider']),
+            ]);
+        }
 
         // Validated again HERE, not only at write time. A config goes stale
         // when the field spec changes, and a template saved under the old one

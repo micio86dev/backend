@@ -66,16 +66,20 @@ class AvatarTemplateResource extends JsonResource
      * `answer_min_seconds` / `answer_max_seconds` are the range, in seconds, the candidate's answer bar
      * calls a good answer (guidance only). Admin-only: classified in `ExposureCatalogue`.
      *
-     * @return array{id: int, name: string, description: string|null, provider: string, scope: 'organization'|'platform', config: array<string, mixed>, is_active: bool, created_at: string|null, updated_at: string|null, llm_model_id: int|null, llm_credential_id: int|null, llm_sync_status: string|null, llm_synced_at: string|null, llm: array{estimated_cost_usd_per_interview: array{minutes: int, turns: int, usd: float}|null}, pal_sync: array{status: string|null, code: string|null, synced_at: string|null}, persona: array{display_name: string|null}, answer_min_seconds: int, answer_max_seconds: int}
+     * `hr_avatar_config_id` is the opaque HR-Avatar `avc_...` id, present only when set (an `hr_avatar` template
+     * always has one; a heygen or tavus template gets one from the export command). Admin-only: classified in
+     * `ExposureCatalogue::conditionalExclusions()`.
      *
-     * @scramble-return array{id: int, name: string, description: string|null, provider: string, scope: 'organization'|'platform', config: array<string, mixed>, is_active: bool, created_at: string|null, updated_at: string|null, llm_model_id: int|null, llm_credential_id: int|null, llm_sync_status: string|null, llm_synced_at: string|null, llm: array{estimated_cost_usd_per_interview: array{minutes: int, turns: int, usd: float}|null}, pal_sync: array{status: string|null, code: string|null, synced_at: string|null}, persona: array{display_name: string|null}, answer_min_seconds: int, answer_max_seconds: int}
+     * @return array{id: int, name: string, description: string|null, provider: string, scope: 'organization'|'platform', config: array<string, mixed>, is_active: bool, created_at: string|null, updated_at: string|null, llm_model_id: int|null, llm_credential_id: int|null, llm_sync_status: string|null, llm_synced_at: string|null, llm: array{estimated_cost_usd_per_interview: array{minutes: int, turns: int, usd: float}|null}, pal_sync: array{status: string|null, code: string|null, synced_at: string|null}, persona: array{display_name: string|null}, answer_min_seconds: int, answer_max_seconds: int, hr_avatar_config_id?: string}
+     *
+     * @scramble-return array{id: int, name: string, description: string|null, provider: string, scope: 'organization'|'platform', config: array<string, mixed>, is_active: bool, created_at: string|null, updated_at: string|null, llm_model_id: int|null, llm_credential_id: int|null, llm_sync_status: string|null, llm_synced_at: string|null, llm: array{estimated_cost_usd_per_interview: array{minutes: int, turns: int, usd: float}|null}, pal_sync: array{status: string|null, code: string|null, synced_at: string|null}, persona: array{display_name: string|null}, answer_min_seconds: int, answer_max_seconds: int, hr_avatar_config_id?: string}
      */
     public function toArray(Request $request): array
     {
         /** @var AvatarTemplate $template */
         $template = $this->resource;
 
-        return [
+        $data = [
             'id' => $template->id,
             'name' => $template->name,
             'description' => $template->description,
@@ -102,6 +106,15 @@ class AvatarTemplateResource extends JsonResource
             'answer_min_seconds' => $template->answer_min_seconds,
             'answer_max_seconds' => $template->answer_max_seconds,
         ];
+
+        // Absent, not null, so every existing output stays byte-identical until a config id exists. Added
+        // here rather than through `when()`: `toArray()` is also read directly (the exposure tests), where a
+        // `MissingValue` would still count as a key.
+        if ($template->hr_avatar_config_id !== null) {
+            $data['hr_avatar_config_id'] = $template->hr_avatar_config_id;
+        }
+
+        return $data;
     }
 
     /**
