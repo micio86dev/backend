@@ -1792,6 +1792,23 @@
                                     "properties": {
                                         "data": {
                                             "$ref": "#/components/schemas/AvatarTemplateResource"
+                                        },
+                                        "warning": {
+                                            "type": "string",
+                                            "enum": [
+                                                "tavus_key_missing",
+                                                "pal_id_missing",
+                                                "pal_not_editable",
+                                                "pal_sync_rejected",
+                                                "pal_sync_unauthorized",
+                                                "pal_not_found",
+                                                "pal_sync_failed",
+                                                "pal_sync_unreachable",
+                                                "llm_provider_unreachable",
+                                                "llm_credential_missing",
+                                                "llm_secret_failed",
+                                                "llm_config_failed"
+                                            ]
                                         }
                                     },
                                     "required": [
@@ -1991,6 +2008,23 @@
                                     "properties": {
                                         "data": {
                                             "$ref": "#/components/schemas/AvatarTemplateResource"
+                                        },
+                                        "warning": {
+                                            "type": "string",
+                                            "enum": [
+                                                "tavus_key_missing",
+                                                "pal_id_missing",
+                                                "pal_not_editable",
+                                                "pal_sync_rejected",
+                                                "pal_sync_unauthorized",
+                                                "pal_not_found",
+                                                "pal_sync_failed",
+                                                "pal_sync_unreachable",
+                                                "llm_provider_unreachable",
+                                                "llm_credential_missing",
+                                                "llm_secret_failed",
+                                                "llm_config_failed"
+                                            ]
                                         }
                                     },
                                     "required": [
@@ -2150,6 +2184,23 @@
                                     "properties": {
                                         "data": {
                                             "$ref": "#/components/schemas/AvatarTemplateResource"
+                                        },
+                                        "warning": {
+                                            "type": "string",
+                                            "enum": [
+                                                "tavus_key_missing",
+                                                "pal_id_missing",
+                                                "pal_not_editable",
+                                                "pal_sync_rejected",
+                                                "pal_sync_unauthorized",
+                                                "pal_not_found",
+                                                "pal_sync_failed",
+                                                "pal_sync_unreachable",
+                                                "llm_provider_unreachable",
+                                                "llm_credential_missing",
+                                                "llm_secret_failed",
+                                                "llm_config_failed"
+                                            ]
                                         }
                                     },
                                     "required": [
@@ -9318,6 +9369,23 @@
                                     "properties": {
                                         "data": {
                                             "$ref": "#/components/schemas/PlatformAvatarTemplateResource"
+                                        },
+                                        "warning": {
+                                            "type": "string",
+                                            "enum": [
+                                                "tavus_key_missing",
+                                                "pal_id_missing",
+                                                "pal_not_editable",
+                                                "pal_sync_rejected",
+                                                "pal_sync_unauthorized",
+                                                "pal_not_found",
+                                                "pal_sync_failed",
+                                                "pal_sync_unreachable",
+                                                "llm_provider_unreachable",
+                                                "llm_credential_missing",
+                                                "llm_secret_failed",
+                                                "llm_config_failed"
+                                            ]
                                         }
                                     },
                                     "required": [
@@ -9472,6 +9540,23 @@
                                     "properties": {
                                         "data": {
                                             "$ref": "#/components/schemas/PlatformAvatarTemplateResource"
+                                        },
+                                        "warning": {
+                                            "type": "string",
+                                            "enum": [
+                                                "tavus_key_missing",
+                                                "pal_id_missing",
+                                                "pal_not_editable",
+                                                "pal_sync_rejected",
+                                                "pal_sync_unauthorized",
+                                                "pal_not_found",
+                                                "pal_sync_failed",
+                                                "pal_sync_unreachable",
+                                                "llm_provider_unreachable",
+                                                "llm_credential_missing",
+                                                "llm_secret_failed",
+                                                "llm_config_failed"
+                                            ]
                                         }
                                     },
                                     "required": [

@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Actions\AvatarTemplates\BindHeygenTemplateVoice;
 use App\Actions\AvatarTemplates\DuplicateAvatarTemplate;
+use App\Actions\ConversationLlm\ResyncTemplateBinding;
 use App\Exceptions\AvatarTemplateInUseException;
 use App\Http\Controllers\Concerns\ValidatesAvatarTemplateWrites;
 use App\Http\Controllers\Controller;
@@ -142,6 +143,7 @@ final class PlatformAvatarTemplateController extends Controller
      *
      * @throws AuthorizationException
      */
+    #[ResponseDoc(201, type: 'array{data: \\App\\Http\\Resources\\PlatformAvatarTemplateResource, warning?: '.ResyncTemplateBinding::WARNING_UNION.'}')]
     public function store(Request $request): JsonResponse
     {
         abort_unless($this->isSuperadmin($request), Response::HTTP_FORBIDDEN);
@@ -189,6 +191,7 @@ final class PlatformAvatarTemplateController extends Controller
      *
      * @throws AuthorizationException
      */
+    #[ResponseDoc(200, type: 'array{data: \\App\\Http\\Resources\\PlatformAvatarTemplateResource, warning?: '.ResyncTemplateBinding::WARNING_UNION.'}')]
     public function update(Request $request, int $id): PlatformAvatarTemplateResource
     {
         abort_unless($this->isSuperadmin($request), Response::HTTP_FORBIDDEN);

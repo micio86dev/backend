@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers;
 
 use App\Actions\AvatarTemplates\BindHeygenTemplateVoice;
+use App\Actions\ConversationLlm\ResyncTemplateBinding;
 use App\Http\Controllers\Concerns\ValidatesAvatarTemplateWrites;
 use App\Http\Resources\AvatarTemplateResource;
 use App\Models\AvatarTemplate;
@@ -235,6 +236,7 @@ final class AvatarTemplateController extends Controller
         return new AvatarTemplateResource($template);
     }
 
+    #[ResponseDoc(201, type: 'array{data: \\App\\Http\\Resources\\AvatarTemplateResource, warning?: '.ResyncTemplateBinding::WARNING_UNION.'}')]
     public function store(Request $request): JsonResponse
     {
         $this->authorize('create', AvatarTemplate::class);
@@ -287,6 +289,7 @@ final class AvatarTemplateController extends Controller
             ->setStatusCode(Response::HTTP_CREATED);
     }
 
+    #[ResponseDoc(200, type: 'array{data: \\App\\Http\\Resources\\AvatarTemplateResource, warning?: '.ResyncTemplateBinding::WARNING_UNION.'}')]
     public function update(Request $request, int $id): AvatarTemplateResource
     {
         $template = AvatarTemplate::findOrFail($id);
@@ -510,6 +513,7 @@ final class AvatarTemplateController extends Controller
      * starting would quietly fall back to the environment defaults — the exact
      * behaviour this whole change exists to replace.
      */
+    #[ResponseDoc(200, type: 'array{data: \\App\\Http\\Resources\\AvatarTemplateResource, warning?: '.ResyncTemplateBinding::WARNING_UNION.'}')]
     public function activate(int $id): AvatarTemplateResource
     {
         $template = AvatarTemplate::findOrFail($id);
