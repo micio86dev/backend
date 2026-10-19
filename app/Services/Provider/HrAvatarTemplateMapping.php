@@ -55,6 +55,7 @@ final class HrAvatarTemplateMapping
 
     /**
      * Keys that become the config's `voice` binding: an external engine with its voice id, else (HeyGen) the stock `voiceId`.
+     * A stock `voiceId` that an external engine replaces (or leaves unbound) is reported as dropped, like any other key not sent.
      *
      * @var array<string, list<string>>
      */
@@ -90,6 +91,10 @@ final class HrAvatarTemplateMapping
         if (in_array($engine, self::EXTERNAL_ENGINES, true)) {
             $voice = $externalId === null ? null : ['engine' => $engine, 'voice_id' => $externalId];
             $voiceMissing = $externalId === null;
+
+            if ($stockId !== null) {
+                $dropped[] = 'voiceId';
+            }
         } elseif ($stockId !== null) {
             $voice = ['engine' => 'provider', 'voice_id' => $stockId];
         }
@@ -103,7 +108,7 @@ final class HrAvatarTemplateMapping
         foreach ($templateConfig as $key => $value) {
             $key = (string) $key;
 
-            if ($value === null || in_array($key, self::VOICE_KEYS[$provider], true)) {
+            if ($value === null || in_array($key, self::VOICE_KEYS[$provider] ?? [], true)) {
                 continue;
             }
 

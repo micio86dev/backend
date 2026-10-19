@@ -38,7 +38,8 @@ final class HrAvatarProvider implements ProviderSessionService
 
     private const MAX_DURATION_SECONDS = 3600;
 
-    private const CONVERSATION_REF = '/^conv_[0-9A-Za-z]+$/';
+    /** The `D` modifier keeps `$` from also matching before a trailing newline. */
+    private const CONVERSATION_REF = '/^conv_[0-9A-Za-z]+$/D';
 
     public function __construct(
         private readonly ActiveTemplateResolver $templates,
@@ -46,10 +47,13 @@ final class HrAvatarProvider implements ProviderSessionService
     ) {}
 
     /**
-     * Mitigation for a lost end or a timed-out create: HR-Avatar expires a never-connected conversation after 900 s and its sweeper bounds a live one.
+     * BEAI ends a conversation here only after a 201 that carries a valid conversation id but no usable secret.
+     * A timed-out create, or a response without a valid id, leaves BEAI nothing to end: if HR-Avatar did create
+     * a conversation, only its own 900 s never-connected expiry covers it.
      *
-     * @throws ProviderException ClientError before any request when the request cannot be well formed or the
-     *                           server answers another 4xx; Throttle on 429; Upstream otherwise.
+     * @throws ProviderException ClientError before any request when the request cannot be well formed, or when the
+     *                           server answers any non-success status below 500 other than 429; Throttle on 429;
+     *                           Upstream on a 5xx, a connection error or a success without a usable id and secret.
      */
     public function issue(InterviewSession $session, QuestionContext $ctx): ProviderToken
     {
@@ -144,7 +148,7 @@ final class HrAvatarProvider implements ProviderSessionService
      * The exactly-seven-member create body. Anything that would make it invalid is refused here, before a
      * request, and never repaired: a prompt is not truncated, a missing config id is not guessed.
      *
-     * @return array<string, mixed>
+     * @return array{avatar_config_id: string, system_prompt: string, opening_text: string, language: string, max_duration_seconds: int, external_ref: string, metadata: \stdClass}
      */
     private function conversationBody(InterviewSession $session, QuestionContext $ctx): array
     {
@@ -166,7 +170,7 @@ final class HrAvatarProvider implements ProviderSessionService
             $this->refuse('opening_text_invalid');
         }
 
-        if ($ctx->language === null || preg_match('/^[a-z]{2}$/', $ctx->language) !== 1) {
+        if ($ctx->language === null || preg_match('/^[a-z]{2}$/D', $ctx->language) !== 1) {
             $this->refuse('language_invalid');
         }
 
@@ -238,6 +242,6 @@ final class HrAvatarProvider implements ProviderSessionService
     {
         $code = $response->json('code');
 
-        return is_string($code) && preg_match('/^[a-z_]{1,64}$/', $code) === 1 ? $code : null;
+        return is_string($code) && preg_match('/^[a-z_]{1,64}$/D', $code) === 1 ? $code : null;
     }
 }

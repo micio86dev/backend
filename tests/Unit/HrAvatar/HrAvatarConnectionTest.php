@@ -120,3 +120,14 @@ test('the provider rule accepts hr_avatar while available', function (): void {
 
     expect($validator->fails())->toBeFalse();
 });
+
+test('a config id is exactly avc_ plus alphanumerics: no newline, no path, no overlong value', function (mixed $value, bool $valid): void {
+    expect(HrAvatarConnection::isConfigId($value))->toBe($valid);
+})->with([
+    'valid' => ['avc_01HXYZ', true],
+    'trailing newline' => ["avc_01HXYZ\n", false],
+    'path' => ['avc_x/../y', false],
+    'no prefix' => ['cfg_1', false],
+    'too long' => ['avc_'.str_repeat('a', 61), false],
+    'not a string' => [123, false],
+]);

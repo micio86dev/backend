@@ -154,7 +154,7 @@ final class ExportTemplatesToHrAvatar extends Command
 
         // Upstream text is never echoed: only a short lowercase token is.
         $status = $response->json('sync_status');
-        $status = is_string($status) && preg_match('/^[a-z_]{1,32}$/', $status) === 1 ? $status : 'unknown';
+        $status = is_string($status) && preg_match('/^[a-z_]{1,32}$/D', $status) === 1 ? $status : 'unknown';
 
         return ["created {$id} sync_status={$status}", $status];
     }

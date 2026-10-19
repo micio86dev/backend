@@ -12,6 +12,7 @@ declare(strict_types=1);
  */
 
 use App\Enums\ApiKeyMode;
+use App\Services\Provider\ProviderPreflight;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -82,4 +83,30 @@ test('a test-mode participant is unaffected by an unavailable pinned template', 
     hraStartRequest($token)->assertStatus(201)->assertJsonPath('provider', 'mock');
 
     Http::assertNothingSent();
+});
+
+test('a pin that resolves to nothing refuses with avatar_missing', function (string $case): void {
+    hraAvailable();
+    [, $project] = hraStartScenario('hr_avatar', ['hr_avatar_config_id' => 'avc_01HXYZ']);
+
+    match ($case) {
+        'deleted' => DB::table('avatar_templates')->where('id', $project->avatar_template_id)->update(['deleted_at' => now()]),
+        'other provider' => DB::table('avatar_templates')->where('id', $project->avatar_template_id)->update(['provider' => 'tavus']),
+    };
+
+    expect(app(ProviderPreflight::class)->check('hr_avatar', $project->id))
+        ->toBe([['key' => 'hr_avatar_config_id', 'code' => 'avatar_missing']]);
+})->with(['deleted', 'other provider']);
+
+test('a fault while resolving the pinned template is not mistaken for a missing config', function (): void {
+    hraAvailable();
+    [, $project] = hraStartScenario('hr_avatar', ['hr_avatar_config_id' => 'avc_01HXYZ']);
+    DB::beforeExecuting(function (string $query): void {
+        if (str_contains($query, 'from "avatar_templates"')) {
+            throw new RuntimeException('database went away');
+        }
+    });
+
+    expect(fn () => app(ProviderPreflight::class)->check('hr_avatar', $project->id))
+        ->toThrow(RuntimeException::class, 'database went away');
 });

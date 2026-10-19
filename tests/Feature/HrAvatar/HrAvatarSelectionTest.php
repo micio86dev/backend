@@ -129,6 +129,26 @@ test('the environment default hr_avatar with no pinned template and no override 
     expect(hraSessionProvider($participant->id))->toBe('heygen');
 });
 
+test('the environment default hr_avatar still selects heygen on a second start of the same participant', function (): void {
+    Http::fake([
+        '*liveavatar*/contexts*' => Http::response(['data' => ['id' => 'ctx']], 200),
+        '*liveavatar*/sessions/token*' => Http::response(['data' => ['session_id' => 's', 'session_token' => 't']], 200),
+        '*liveavatar*' => Http::response([], 200),
+    ]);
+    Http::preventStrayRequests();
+    config(['interview.provider' => 'hr_avatar', 'interview.heygen.avatar_id' => 'a', 'interview.heygen.voice_id' => 'v']);
+    [, $project, $participant, $token] = hraStartScenario('heygen');
+    hraUnpin($project);
+
+    hraStart($token)->assertStatus(201)->assertJsonPath('provider', 'heygen');
+    expect(hraSessionProvider($participant->id))->toBe('heygen');
+
+    hraStart($token)->assertStatus(201)->assertJsonPath('provider', 'heygen');
+
+    expect(DB::table('interview_sessions')->where('participant_id', $participant->id)->pluck('provider')->all())->toBe(['heygen']);
+    Http::assertNotSent(fn (Request $request): bool => str_contains($request->url(), 'hra.example.test'));
+});
+
 test('a pinned tavus template wins over a heygen override', function (): void {
     Http::fake(['*tavusapi*' => Http::response(['conversation_id' => 'c', 'conversation_url' => 'https://tavus.example.test/c'], 200)]);
     Http::preventStrayRequests();

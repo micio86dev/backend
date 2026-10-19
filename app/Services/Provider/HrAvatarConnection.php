@@ -85,11 +85,12 @@ final class HrAvatarConnection
             ->timeout(15);
     }
 
+    /** The `D` modifier keeps `$` from also matching before a trailing newline. */
     public static function isConfigId(mixed $value): bool
     {
         return is_string($value)
             && strlen($value) <= self::CONFIG_ID_MAX_LENGTH
-            && preg_match(self::CONFIG_ID_REGEX, $value) === 1;
+            && preg_match(self::CONFIG_ID_REGEX.'D', $value) === 1;
     }
 
     /** Opaque, stable attribution value for an organization: no name, no personal data. */

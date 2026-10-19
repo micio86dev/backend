@@ -119,6 +119,25 @@ test('config stays required for heygen and tavus with exactly the pre-change mes
         ]);
 })->with(['tavus', 'heygen']);
 
+test('a heygen or tavus create without config AND with another invalid field keeps the pre-change 422 body', function (string $provider): void {
+    hraMakeAvailable();
+    $org = Organization::factory()->create();
+
+    // `name` is required and `answer_min_seconds` must be an integer. The expected body is the one the
+    // unmodified `develop` controller (076da7d) returned for this exact request, captured by running it there:
+    // one entry per failing field in rule order, `config` included, and a count in the summary message.
+    $this->withToken(hraActingToken($org))->postJson('/api/avatar-templates', ['provider' => $provider, 'answer_min_seconds' => 'soon'])
+        ->assertStatus(422)
+        ->assertExactJson([
+            'message' => 'The name field is required. (and 3 more errors)',
+            'errors' => [
+                'name' => ['The name field is required.'],
+                'config' => ['The config field is required.'],
+                'answer_min_seconds' => ['The answer min seconds field must be an integer.', 'The answer min seconds field must be at least 10.'],
+            ],
+        ]);
+})->with(['tavus', 'heygen']);
+
 test('every field error of an hr_avatar create comes back in ONE 422', function (): void {
     hraMakeAvailable();
     $org = Organization::factory()->create();
@@ -243,6 +262,23 @@ test('activation is refused while unavailable and an existing template stays man
     $this->withToken($token)->patchJson("/api/avatar-templates/{$template->id}", ['name' => 'Renamed'])->assertOk();
     $this->withToken($token)->deleteJson("/api/avatar-templates/{$template->id}")->assertNoContent();
 
+    Http::assertNothingSent();
+});
+
+test('an available hr_avatar template with a config id activates and replaces the previously active one', function (): void {
+    hraMakeAvailable();
+    Http::fake();
+    $org = Organization::factory()->create();
+    $first = hraSeedTemplate($org, ['hr_avatar_config_id' => 'avc_FIRST', 'is_active' => true]);
+    $second = hraSeedTemplate($org, ['hr_avatar_config_id' => 'avc_SECOND']);
+
+    $this->withToken(hraActingToken($org))->postJson("/api/avatar-templates/{$second->id}/activate")
+        ->assertOk()
+        ->assertJsonPath('data.is_active', true)
+        ->assertJsonPath('data.hr_avatar_config_id', 'avc_SECOND');
+
+    expect($second->fresh()->is_active)->toBeTrue();
+    expect($first->fresh()->is_active)->toBeFalse();
     Http::assertNothingSent();
 });
 

@@ -207,16 +207,23 @@ test('resuming a live session issues a new conversation and ends the old one, ev
     expect(hraSessionRow($participant->id)->provider_session_ref)->toBe('conv_FLOW2');
 })->with(['end succeeds' => [200], 'end fails with 503' => [503]]);
 
-test('a start after a browser connect failure leaves the participant live on a fresh conversation', function (): void {
+// The server is told nothing when a browser fails to connect: the candidate retries and the browser calls
+// /start again. So this proves that retry, the server half of the path, not a failure the server detects.
+test('a second start on a live session, as a connect retry issues it, replaces the unused conversation', function (): void {
     hraFlowFake();
     [, , $participant, $token] = hraFlowScenario(1);
     hraFlowStart($token)->assertStatus(201);
 
-    hraFlowStart($token)->assertStatus(201);
+    $retry = hraFlowStart($token)->assertStatus(201);
 
+    $retry->assertJsonPath('provider_token', 'CS_FLOW2');
+    expect($retry->json())->not->toHaveKey('continuation');
     expect(hraSentTo('/v1/conversations'))->toHaveCount(2);
+    expect(hraSentTo('/conversations/conv_FLOW1/end'))->toHaveCount(1);
+    expect(hraSentTo('/conversations/conv_FLOW2/end'))->toHaveCount(0);
     expect($participant->fresh()->status)->toBe('in_corso');
     expect(hraSessionRow($participant->id)->status)->toBe('in_corso');
+    expect(hraSessionRow($participant->id)->provider_session_ref)->toBe('conv_FLOW2');
 });
 
 // ─── Transcript of record ────────────────────────────────────────────────────
@@ -288,7 +295,8 @@ test('a review of a finished hr_avatar session has no cost estimate and still re
     $review = test()->withToken((string) auth('api')->login($admin))->getJson("/api/interview-sessions/{$sessionId}/review");
 
     $review->assertOk();
-    expect($review->json('data.cost.avatar'))->toBeNull();
+    // The key must be present and null: `json()` also answers null for an absent key.
+    expect($review->json('data.cost'))->toHaveKey('avatar')->and($review->json('data.cost.avatar'))->toBeNull();
 });
 
 // ─── Failure matrix ──────────────────────────────────────────────────────────

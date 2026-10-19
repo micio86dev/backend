@@ -199,6 +199,23 @@ test('the sync status of every created config is printed, counted and warned abo
     expect(array_column(hreRows(), 'hr_avatar_config_id'))->toBe(['avc_A', 'avc_B', 'avc_C']);
 });
 
+test('a sync status or an id with a trailing newline is not trusted', function (): void {
+    hraMakeAvailable();
+    $org = Organization::factory()->create();
+    hreTemplate($org, 'tavus', ['name' => 'status']);
+    hreTemplate($org, 'tavus', ['name' => 'id']);
+    Http::fake(['*' => Http::sequence()
+        ->push(['id' => 'avc_A', 'sync_status' => "synced\n"], 201)
+        ->push(['id' => "avc_B\n", 'sync_status' => 'synced'], 201)]);
+
+    [$exit, $output] = hreRun(true);
+
+    expect($exit)->toBe(1)
+        ->and($output)->toContain('created avc_A sync_status=unknown')
+        ->and($output)->toContain('name="id" failed provider_bad_response');
+    expect(array_column(hreRows(), 'hr_avatar_config_id'))->toBe(['avc_A', null]);
+});
+
 // ─── Failures ────────────────────────────────────────────────────────────────
 
 test('an upstream failure is reported by a stable code, writes nothing and leaks nothing', function (int $status, string $code): void {
@@ -317,6 +334,37 @@ test('parity: every BEAI provider key is mapped, a voice key or reported as drop
         ->toBe($provider === 'tavus' ? ['participant_left_timeout'] : []);
 })->with(['tavus', 'heygen']);
 
+/**
+ * The keys a HR-Avatar field specs source declares, per member: every `new FieldSpec('<key>'` of `config()`
+ * and of `persona()`. Read straight from the source so the copied list above cannot drift from it unnoticed.
+ *
+ * @return array{config: list<string>, persona: list<string>}
+ */
+function hreSourceKeys(string $file): array
+{
+    [$config, $persona] = array_pad(explode('function persona(', (string) file_get_contents($file), 2), 2, '');
+    $keys = static fn (string $part): array => preg_match_all("/new FieldSpec\(\s*'([^']+)'/", $part, $matches) > 0 ? $matches[1] : [];
+
+    return ['config' => $keys($config), 'persona' => $keys($persona)];
+}
+
+test('the copied HR-Avatar key list equals what the HR-Avatar field specs source accepts', function (string $provider, string $relativePath): void {
+    $file = base_path('../hr-avatar/service/app/AvatarProviders/'.$relativePath);
+
+    if (! is_file($file)) {
+        $this->markTestSkipped('The sibling checkout ../hr-avatar/service is absent (CI and bare clones), so the copied key list cannot be compared with its source.');
+    }
+
+    $source = hreSourceKeys($file);
+
+    expect($source['config'])->not->toBeEmpty();
+    expect($source['config'])->toEqualCanonicalizing(HRE_HR_AVATAR_KEYS[$provider]['config']);
+    expect($source['persona'])->toEqualCanonicalizing(HRE_HR_AVATAR_KEYS[$provider]['persona']);
+})->with([
+    'tavus' => ['tavus', 'Tavus/TavusFieldSpecs.php'],
+    'heygen' => ['heygen', 'LiveAvatar/LiveAvatarFieldSpecs.php'],
+]);
+
 test('a Tavus template is exported with the replica and persona ids, the persona knobs split out and the voice bound', function (): void {
     hraMakeAvailable();
     hreTemplate(Organization::factory()->create(), 'tavus', ['config' => [
@@ -380,6 +428,47 @@ test('a setting that needs an external voice is dropped, and reported, when none
         ->and($output)->toContain('dropped_key=voiceStability')
         ->and($output)->toContain('dropped_key=ttsModelName')
         ->and($output)->toContain('dropped_key=ttsEngine,ttsExternalVoiceId');
+});
+
+test('a HeyGen stock voice id that an external voice replaces is reported as dropped, and reported only then', function (): void {
+    hraMakeAvailable();
+    $org = Organization::factory()->create();
+    hreTemplate($org, 'heygen', ['name' => 'external', 'config' => ['avatarId' => 'a1', 'voiceId' => 'v1', 'ttsEngine' => 'elevenlabs', 'ttsExternalVoiceId' => 'ext_1']]);
+    hreTemplate($org, 'heygen', ['name' => 'stock', 'config' => ['avatarId' => 'a1', 'voiceId' => 'v1']]);
+    Http::fake(['*' => hreCreated('avc_A')]);
+
+    [$exit, $output] = hreRun(true);
+
+    [$external, $stock] = hreBodies();
+    expect($exit)->toBe(0)
+        ->and($external['voice'])->toBe(['engine' => 'elevenlabs', 'voice_id' => 'ext_1'])
+        ->and($stock['voice'])->toBe(['engine' => 'provider', 'voice_id' => 'v1'])
+        ->and($output)->toContain('name="external" created avc_A sync_status=synced dropped_key=voiceId')
+        ->and($output)->not->toContain('name="stock" created avc_A sync_status=synced dropped_key');
+});
+
+test('the mapping reports the replaced stock voice id and nothing else for an external voice', function (): void {
+    $mapped = HrAvatarTemplateMapping::map('heygen', ['avatarId' => 'a1', 'voiceId' => 'v1', 'ttsEngine' => 'cartesia', 'ttsExternalVoiceId' => 'x']);
+
+    expect($mapped['dropped'])->toBe(['voiceId'])
+        ->and($mapped['voice'])->toBe(['engine' => 'cartesia', 'voice_id' => 'x']);
+    expect(HrAvatarTemplateMapping::map('heygen', ['avatarId' => 'a1', 'voiceId' => 'v1'])['dropped'])->toBe([]);
+});
+
+test('the mapping reports the stock voice id too when the external voice has no id to bind', function (): void {
+    $mapped = HrAvatarTemplateMapping::map('heygen', ['avatarId' => 'a1', 'voiceId' => 'v1', 'ttsEngine' => 'elevenlabs']);
+
+    expect($mapped['voice_missing'])->toBeTrue()
+        ->and($mapped['voice'])->toBeNull()
+        ->and($mapped['dropped'])->toBe(['voiceId']);
+});
+
+test('the mapping reports every key as dropped for a provider it has no table for', function (): void {
+    $mapped = HrAvatarTemplateMapping::map('mock', ['alpha' => 1, 'beta' => 2]);
+
+    expect($mapped['dropped'])->toBe(['alpha', 'beta'])
+        ->and($mapped['config'])->toBe([])
+        ->and($mapped['voice'])->toBeNull();
 });
 
 test('a key nobody mapped is reported as dropped and never sent', function (): void {

@@ -93,6 +93,10 @@ final class ProviderPreflight
      * Both are operator faults, so they refuse here with existing codes rather than at `issue()`,
      * where they would burn a session.
      *
+     * The resolver answers null for every not-found case (no pin, a deleted or other-provider pin, nothing active),
+     * so an exception from it is a real fault (database, tenancy) and is deliberately not caught: it must surface,
+     * not read as a missing config.
+     *
      * @return list<array{key: string, code: string}>
      */
     private function hrAvatar(?int $projectId): array
@@ -103,11 +107,7 @@ final class ProviderPreflight
             $errors[] = ['key' => 'credentials', 'code' => 'provider_key_missing'];
         }
 
-        try {
-            $configId = $this->templates->resolve(HrAvatarConnection::PROVIDER, $projectId)?->hr_avatar_config_id;
-        } catch (Throwable) {
-            $configId = null;
-        }
+        $configId = $this->templates->resolve(HrAvatarConnection::PROVIDER, $projectId)?->hr_avatar_config_id;
 
         if ($this->blank($configId)) {
             $errors[] = ['key' => 'hr_avatar_config_id', 'code' => 'avatar_missing'];

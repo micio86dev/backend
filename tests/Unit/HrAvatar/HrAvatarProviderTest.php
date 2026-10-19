@@ -280,6 +280,7 @@ test('a request that cannot be well formed fails as a client error before anythi
     'no language' => [fn (): array => [hraIssueSession(), hraQuestionContext(['language' => null])]],
     'language not two letters' => [fn (): array => [hraIssueSession(), hraQuestionContext(['language' => 'ita'])]],
     'language not lowercase' => [fn (): array => [hraIssueSession(), hraQuestionContext(['language' => 'IT'])]],
+    'language with a trailing newline' => [fn (): array => [hraIssueSession(), hraQuestionContext(['language' => "it\n"])]],
 ]);
 
 // ─── issue(): diagnostics ────────────────────────────────────────────────────
@@ -316,6 +317,7 @@ test('a hostile code is dropped from the message and the log', function (string 
     'eighty characters' => [str_repeat('a', 80)],
     'digits' => ['code_42'],
     'a path' => ['../etc/passwd'],
+    'a trailing newline' => ["valid_code\n"],
 ]);
 
 // ─── teardown() ──────────────────────────────────────────────────────────────
@@ -363,6 +365,7 @@ test('teardown sends nothing for a reference that is not a conversation id', fun
     'no prefix' => ['abc'],
     'path traversal' => ['conv_x/../y'],
     'query injection' => ['conv_x?force=1'],
+    'trailing newline' => ["conv_01ABC\n"],
 ]);
 
 test('teardown with the integration unavailable sends nothing, reports false and logs', function (): void {
