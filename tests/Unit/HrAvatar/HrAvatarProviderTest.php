@@ -169,6 +169,44 @@ test('a malformed success is an upstream failure and returns no token', function
     'not JSON' => [201, '<html>proxy error</html>'],
 ]);
 
+test('a created conversation whose secret is unusable is ended before the failure is thrown', function (mixed $secret): void {
+    Http::fake([
+        'hra.example.test/v1/conversations' => Http::response(['id' => 'conv_01ABC'] + ($secret === false ? [] : ['client_secret' => $secret]), 201),
+        'hra.example.test/v1/conversations/conv_01ABC/end' => Http::response('', 204),
+    ]);
+    Http::preventStrayRequests();
+
+    $e = hraThrown(fn () => hraIssue());
+
+    expect($e->failureClass())->toBe(ProviderFailureClass::Upstream);
+    Http::assertSentCount(2);
+    Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+        && $request->url() === 'https://hra.example.test/v1/conversations/conv_01ABC/end'
+        && ($request->header('Authorization')[0] ?? null) === 'Bearer '.HRA_SECRET);
+})->with(['missing' => [false], 'empty' => ['']]);
+
+test('a failing end call during that cleanup is swallowed, logged by status class only, and the original failure is thrown', function (): void {
+    $logs = hraLogs();
+    Http::fake([
+        'hra.example.test/v1/conversations' => Http::response(['id' => 'conv_01ABC'], 201),
+        'hra.example.test/v1/conversations/conv_01ABC/end' => Http::response(['detail' => 'upstream-detail'], 503),
+    ]);
+    Http::preventStrayRequests();
+
+    $e = hraThrown(fn () => hraIssue());
+
+    expect($e->getMessage())->toBe('hr_avatar: issue failed (malformed response)');
+    expect(implode('', $logs->getArrayCopy()))->toContain('5xx')->not->toContain('upstream-detail');
+});
+
+test('a malformed response with no usable conversation id ends nothing', function (): void {
+    hraFakeConversation(201, ['id' => 'xyz_1', 'client_secret' => 'CS']);
+
+    hraThrown(fn () => hraIssue());
+
+    Http::assertSentCount(1);
+});
+
 test('failures are classified onto the existing provider failure classes', function (int $status, ProviderFailureClass $class): void {
     hraFakeConversation($status, ['code' => 'whatever', 'title' => 'x']);
 

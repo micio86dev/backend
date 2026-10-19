@@ -46,6 +46,8 @@ final class HrAvatarProvider implements ProviderSessionService
     ) {}
 
     /**
+     * Mitigation for a lost end or a timed-out create: HR-Avatar expires a never-connected conversation after 900 s and its sweeper bounds a live one.
+     *
      * @throws ProviderException ClientError before any request when the request cannot be well formed or the
      *                           server answers another 4xx; Throttle on 429; Upstream otherwise.
      */
@@ -65,6 +67,11 @@ final class HrAvatarProvider implements ProviderSessionService
 
         $id = $response->json('id');
         $secret = $response->json('client_secret');
+
+        if ($response->status() === 201 && is_string($id) && preg_match(self::CONVERSATION_REF, $id) === 1 && (! is_string($secret) || $secret === '')) {
+            // The conversation exists upstream but nobody can join it: end it rather than leave it to expire.
+            $this->endUnusable($id);
+        }
 
         if ($response->status() !== 201 || ! is_string($id) || preg_match(self::CONVERSATION_REF, $id) !== 1 || ! is_string($secret) || $secret === '') {
             $this->fail('issue', ProviderFailureClass::Upstream, $this->statusClass($response), null, 'issue failed (malformed response)');
@@ -90,6 +97,7 @@ final class HrAvatarProvider implements ProviderSessionService
     /**
      * End the conversation. Never throws: a failure is logged without the secret and reported as false.
      * A reference that is not a conversation id sends nothing (it also keeps path characters out of the URL).
+     * When it is skipped or fails, HR-Avatar still expires a never-connected conversation after 900 s and its sweeper bounds a live one.
      */
     public function teardown(ProviderToken $token): bool
     {
@@ -120,6 +128,16 @@ final class HrAvatarProvider implements ProviderSessionService
         $this->log('teardown', $this->statusClass($response), $this->safeCode($response), $this->classify($response->status()));
 
         return false;
+    }
+
+    /** Best effort: the caller is already failing, so nothing here may replace its exception. */
+    private function endUnusable(string $id): void
+    {
+        try {
+            $this->teardown(new ProviderToken(provider: HrAvatarConnection::PROVIDER, token: '', provider_session_ref: $id));
+        } catch (\Throwable) {
+            // Swallowed on purpose; teardown() has already logged the status class of an HTTP failure.
+        }
     }
 
     /**
