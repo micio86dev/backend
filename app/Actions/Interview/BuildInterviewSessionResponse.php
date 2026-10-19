@@ -7,6 +7,7 @@ namespace App\Actions\Interview;
 use App\Models\AvatarTemplate;
 use App\Models\InterviewSession;
 use App\Models\Project;
+use App\Services\Provider\HrAvatarConnection;
 use App\Services\Provider\ProviderToken;
 use App\Support\Interview\SessionLiveClock;
 use Illuminate\Http\JsonResponse;
@@ -129,6 +130,16 @@ final class BuildInterviewSessionResponse
         // a server-issued code and the id it asserted, never prose, anchors or a prompt.
         if ($continuation !== null) {
             $body['continuation'] = $continuation;
+        }
+
+        // What the browser SDK needs beside `provider_token` (the per-conversation client secret): the
+        // service origin and the publishable key, both browser-safe. Absent for every other provider, so
+        // their bodies stay byte-identical. The secret key never appears here.
+        if ($token->provider === HrAvatarConnection::PROVIDER) {
+            $body['hr_avatar'] = [
+                'base_url' => HrAvatarConnection::baseUrl(),
+                'publishable_key' => HrAvatarConnection::publishableKey(),
+            ];
         }
 
         return response()->json($body, Response::HTTP_CREATED);

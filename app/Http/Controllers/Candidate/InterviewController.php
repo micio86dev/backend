@@ -120,7 +120,7 @@ class InterviewController extends Controller
      * interviewed, `429 provider_busy` means the provider is busy and the call can be retried, and `502`
      * means the provider failed.
      *
-     * @scramble-return array{session_id: int, provider: string, provider_token: string|null, conversation_url: string|null, audio_only: bool, question_context: array{competency_code: string, question_index: int, end_phrase: string, final_phrase: string, prompt_version: string|null, competency_ordinal: int|null, total_competencies: int|null}, interview_max_seconds: int, answer_min_seconds: int, answer_max_seconds: int, conversation_id?: string, conversation_ttl_seconds?: int, continuation?: array{conversation_id: string, competency_code: string}}
+     * @scramble-return array{session_id: int, provider: string, provider_token: string|null, conversation_url: string|null, audio_only: bool, question_context: array{competency_code: string, question_index: int, end_phrase: string, final_phrase: string, prompt_version: string|null, competency_ordinal: int|null, total_competencies: int|null}, interview_max_seconds: int, answer_min_seconds: int, answer_max_seconds: int, conversation_id?: string, conversation_ttl_seconds?: int, continuation?: array{conversation_id: string, competency_code: string}, hr_avatar?: array{base_url: string, publishable_key: string}}
      *
      * @throws \Throwable
      *

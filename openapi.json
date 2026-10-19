@@ -6772,6 +6772,21 @@
                                                 "conversation_id",
                                                 "competency_code"
                                             ]
+                                        },
+                                        "hr_avatar": {
+                                            "type": "object",
+                                            "properties": {
+                                                "base_url": {
+                                                    "type": "string"
+                                                },
+                                                "publishable_key": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "required": [
+                                                "base_url",
+                                                "publishable_key"
+                                            ]
                                         }
                                     },
                                     "required": [

@@ -6,6 +6,8 @@ namespace App\Actions\Interview;
 
 use App\Models\InterviewSession;
 use App\Services\Provider\HeygenProvider;
+use App\Services\Provider\HrAvatarConnection;
+use App\Services\Provider\HrAvatarProvider;
 use App\Services\Provider\MockProvider;
 use App\Services\Provider\ProviderToken;
 use App\Services\Provider\TavusProvider;
@@ -56,6 +58,8 @@ final class ReleaseProviderSession
             (match ($provider) {
                 'tavus' => app(TavusProvider::class),
                 'mock' => app(MockProvider::class),
+                // Explicit, so a `conv_...` ref is never handed to HeyGen by the default below.
+                HrAvatarConnection::PROVIDER => app(HrAvatarProvider::class),
                 default => app(HeygenProvider::class),
             })->teardown(new ProviderToken(
                 provider: $provider,
