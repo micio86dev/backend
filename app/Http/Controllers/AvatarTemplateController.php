@@ -645,11 +645,8 @@ final class AvatarTemplateController extends Controller
             ], Response::HTTP_CONFLICT);
         }
 
-        if ($template->provider === 'heygen') {
-            // Never throws (design D8) — deleting OUR row must not be
-            // blocked by an unreachable HeyGen account.
-            app(HeygenLlmRegistrar::class)->forget($template);
-        }
+        // The model's `deleting` guard can still refuse: the audit row and the teardown follow a delete that succeeded.
+        $template->delete();
 
         app(AuditRecorder::class)->record(
             'avatar_template.deleted',
@@ -658,7 +655,11 @@ final class AvatarTemplateController extends Controller
             before: ['name' => $template->name, 'provider' => $template->provider],
         );
 
-        $template->delete();
+        if ($template->provider === 'heygen') {
+            // Never throws (design D8) — deleting OUR row must not be
+            // blocked by an unreachable HeyGen account.
+            app(HeygenLlmRegistrar::class)->forget($template);
+        }
 
         return response()->json(null, Response::HTTP_NO_CONTENT);
     }

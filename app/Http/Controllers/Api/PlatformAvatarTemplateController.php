@@ -366,12 +366,6 @@ final class PlatformAvatarTemplateController extends Controller
             throw new AvatarTemplateInUseException($usage['project_count'], $usage['organization_count']);
         }
 
-        if ($template->provider === 'heygen') {
-            // Never throws (design D8): deleting OUR row must not be blocked by
-            // an unreachable HeyGen account.
-            app(HeygenLlmRegistrar::class)->forget($template);
-        }
-
         $this->context->run($actor, fn () => DB::transaction(function () use ($actor, $template): void {
             $this->audit->record(
                 $actor->id,
@@ -384,6 +378,13 @@ final class PlatformAvatarTemplateController extends Controller
 
             $template->delete();
         }));
+
+        // The model's `deleting` guard can still refuse: the teardown follows a delete that succeeded.
+        if ($template->provider === 'heygen') {
+            // Never throws (design D8): deleting OUR row must not be blocked by
+            // an unreachable HeyGen account.
+            app(HeygenLlmRegistrar::class)->forget($template);
+        }
 
         return response()->json(null, Response::HTTP_NO_CONTENT);
     }
