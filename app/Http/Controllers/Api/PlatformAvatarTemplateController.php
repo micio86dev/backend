@@ -155,8 +155,9 @@ final class PlatformAvatarTemplateController extends Controller
         $this->assertAnswerRangeOrdered($validated);
 
         $this->assertConfigValid($validated['provider'], $validated['config']);
-        app(BindHeygenTemplateVoice::class)->run($validated['provider'], $validated['config']);
         $this->assertNameFreeAmong(AvatarTemplate::platformOnly(), $validated['name'], null);
+        // Last, after every refusal a write can raise: the bind is not undoable.
+        app(BindHeygenTemplateVoice::class)->run($validated['provider'], $validated['config']);
 
         $template = $this->answeringPlatformNameRace(fn (): AvatarTemplate => $this->context->run($actor, fn (): AvatarTemplate => DB::transaction(function () use ($validated, $actor): AvatarTemplate {
             $template = AvatarTemplate::create($validated);
@@ -212,11 +213,15 @@ final class PlatformAvatarTemplateController extends Controller
 
         if (array_key_exists('config', $validated)) {
             $this->assertConfigValid($template->provider, $validated['config']);
-            app(BindHeygenTemplateVoice::class)->run($template->provider, $validated['config']);
         }
 
         if (array_key_exists('name', $validated)) {
             $this->assertNameFreeAmong(AvatarTemplate::platformOnly(), $validated['name'], $template->id);
+        }
+
+        // Last, after every refusal a write can raise: the bind is not undoable.
+        if (array_key_exists('config', $validated)) {
+            app(BindHeygenTemplateVoice::class)->run($template->provider, $validated['config']);
         }
 
         $before = ['name' => $template->name];

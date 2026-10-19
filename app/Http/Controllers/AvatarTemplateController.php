@@ -261,11 +261,12 @@ final class AvatarTemplateController extends Controller
         $this->assertAnswerRangeOrdered($validated);
 
         $this->assertConfigValid($validated['provider'], $validated['config']);
+        $this->assertNameFreeAmong(AvatarTemplate::query(), $validated['name'], null);
         // A superadmin's external voice is bound here, before the row is written,
         // exactly as on the platform route: the ledger and secrets are platform
         // tables, the template row below still belongs to the acting organization.
+        // Last, after every refusal a write can raise: the bind is not undoable.
         app(BindHeygenTemplateVoice::class)->run($validated['provider'], $validated['config']);
-        $this->assertNameFreeAmong(AvatarTemplate::query(), $validated['name'], null);
 
         // is_active is deliberately absent from the accepted fields. Creating a
         // template must never change what candidates are seeing right now, and
@@ -321,11 +322,15 @@ final class AvatarTemplateController extends Controller
 
         if (array_key_exists('config', $validated)) {
             $this->assertConfigValid($template->provider, $validated['config']);
-            app(BindHeygenTemplateVoice::class)->run($template->provider, $validated['config']);
         }
 
         if (array_key_exists('name', $validated)) {
             $this->assertNameFreeAmong(AvatarTemplate::query(), $validated['name'], $template->id);
+        }
+
+        // Last, after every refusal a write can raise: the bind is not undoable.
+        if (array_key_exists('config', $validated)) {
+            app(BindHeygenTemplateVoice::class)->run($template->provider, $validated['config']);
         }
 
         // Names, never ids — the AuditRecorder doctrine applied to a binding
