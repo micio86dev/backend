@@ -131,3 +131,13 @@ test('a config id is exactly avc_ plus alphanumerics: no newline, no path, no ov
     'too long' => ['avc_'.str_repeat('a', 61), false],
     'not a string' => [123, false],
 ]);
+
+test('the config id pattern is self-contained: no trailing newline passes through the constant alone or as a validation rule', function (): void {
+    expect(preg_match(HrAvatarConnection::CONFIG_ID_REGEX, 'avc_01HXYZ'))->toBe(1)
+        ->and(preg_match(HrAvatarConnection::CONFIG_ID_REGEX, "avc_01HXYZ\n"))->toBe(0);
+
+    $rule = fn (string $value) => Validator::make(['id' => $value], ['id' => ['regex:'.HrAvatarConnection::CONFIG_ID_REGEX]])->passes();
+
+    expect($rule('avc_01HXYZ'))->toBeTrue()
+        ->and($rule("avc_01HXYZ\n"))->toBeFalse();
+});

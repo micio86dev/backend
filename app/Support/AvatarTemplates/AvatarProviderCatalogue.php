@@ -6,6 +6,7 @@ namespace App\Support\AvatarTemplates;
 
 use App\Services\Provider\HrAvatarConnection;
 use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -141,8 +142,12 @@ final class AvatarProviderCatalogue
             return $cached;
         }
 
+        // Set by a paged fetch that stopped at its safety cap while the vendor still had more: the result is
+        // served, but never cached as if it were the whole inventory.
+        $truncated = false;
+
         try {
-            $items = self::fetchLive($provider, $resource, $organizationId);
+            $items = self::fetchLive($provider, $resource, $organizationId, $truncated);
         } catch (CatalogueFetchException $e) {
             // D3: a provider failure is NEVER cached — the next call retries
             // rather than replaying a stale failure. Only the safe code and the
@@ -172,6 +177,10 @@ final class AvatarProviderCatalogue
         }
 
         $result = ['status' => 'ok', 'items' => $items];
+        if ($truncated) {
+            return $result;
+        }
+
         Cache::put($cacheKey, $result, $organizationId === null ? now()->addDay() : now()->addMinutes(self::ORGANIZATION_TTL_MINUTES));
 
         return $result;
@@ -189,7 +198,7 @@ final class AvatarProviderCatalogue
     /**
      * @return list<array<string, mixed>>
      */
-    private static function fetchLive(string $provider, string $resource, ?int $organizationId = null): array
+    private static function fetchLive(string $provider, string $resource, ?int $organizationId = null, bool &$truncated = false): array
     {
         // The HTTP surface (AvatarTemplateController::catalogue()) already
         // rejects an unknown provider/resource with 422 before reaching here —
@@ -202,7 +211,7 @@ final class AvatarProviderCatalogue
             'heygen:avatar' => self::heygenAvatars(),
             'cartesia:voice' => self::cartesiaVoices(),
             'elevenlabs:voice' => self::elevenlabsVoices(),
-            'hr_avatar:avatar_config' => self::hrAvatarConfigs($organizationId),
+            'hr_avatar:avatar_config' => self::hrAvatarConfigs($organizationId, $truncated),
             default => throw new CatalogueFetchException('unsupported_catalogue'),
         };
 
@@ -276,11 +285,14 @@ final class AvatarProviderCatalogue
      *  - `false` — the id is in `persona_type=system` (Tavus stock personas);
      *  - `null`  — UNKNOWN. In neither list (observed live 2026-09-29: 46
      *              personas unfiltered, 10 `user`, 30 `system`, so some are in
-     *              neither), or the list that would decide could not be
-     *              fetched. Unknown is never promoted to true: PATCH on such a
-     *              persona was answered 400 "Invalid persona_id".
-     * A persona in both lists is `true`. A failed `persona_type` call degrades
-     * only this flag; it never fails the catalogue.
+     *              neither), or the `system` list could not be fetched, or the
+     *              `user` list could not be fetched and the id is not in the
+     *              `system` list. Unknown is never promoted to true: PATCH on
+     *              such a persona was answered 400 "Invalid persona_id".
+     * A persona in both lists is `true`. When only the `user` call failed, an id
+     * found in the `system` list stays `false` (fail closed: no edit affordance;
+     * pinned by TavusPalEditableCatalogueTest). A failed `persona_type` call
+     * degrades only this flag; it never fails the catalogue.
      *
      * @return list<array<string, mixed>>
      */
@@ -608,9 +620,12 @@ final class AvatarProviderCatalogue
      * `external_ref`: a filter regression upstream must never become a cross-tenant read. Only configs that can
      * start a conversation are offered (`synced`, `not_required`).
      *
+     * When the page cap is hit while the upstream still offers a next cursor, the list is incomplete: a
+     * warning is logged (organization ref only) and `$truncated` is set so the caller does not cache it.
+     *
      * @return list<array<string, mixed>>
      */
-    private static function hrAvatarConfigs(?int $organizationId): array
+    private static function hrAvatarConfigs(?int $organizationId, bool &$truncated = false): array
     {
         if ($organizationId === null || ! HrAvatarConnection::isAvailable()) {
             throw new CatalogueFetchException('provider_key_missing');
@@ -621,13 +636,14 @@ final class AvatarProviderCatalogue
         $cursor = null;
 
         for ($page = 1; $page <= self::HR_AVATAR_MAX_PAGES; $page++) {
+            // The shared HR-Avatar client carries the base URL, the bearer token, JSON accept and the timeout.
             $body = self::request(
                 HrAvatarConnection::PROVIDER,
-                HrAvatarConnection::baseUrl().'/v1/avatar-configs',
+                '/v1/avatar-configs',
                 HrAvatarConnection::secretKey(),
-                'Authorization',
+                '',
                 ['limit' => self::PAGE_SIZE, 'external_ref' => $ref] + ($cursor === null ? [] : ['cursor' => $cursor]),
-                authScheme: 'Bearer ',
+                client: HrAvatarConnection::client(),
             );
 
             $batch = is_array($body['data'] ?? null) ? array_values(array_filter($body['data'], 'is_array')) : [];
@@ -636,6 +652,14 @@ final class AvatarProviderCatalogue
 
             if ($batch === [] || ! is_string($cursor) || $cursor === '') {
                 break;
+            }
+
+            if ($page === self::HR_AVATAR_MAX_PAGES) {
+                $truncated = true;
+                Log::warning('AvatarProviderCatalogue: HR-Avatar config list truncated at the page cap', [
+                    'organization' => $ref,
+                    'max_pages' => self::HR_AVATAR_MAX_PAGES,
+                ]);
             }
         }
 
@@ -747,7 +771,7 @@ final class AvatarProviderCatalogue
      *
      * @param  array<string, mixed>|string  $query
      * @param  array<string, string>  $extraHeaders
-     * @param  string  $authScheme  Prefix of the auth header value (`Bearer `); the empty-key guard sees the raw key
+     * @param  PendingRequest|null  $client  A ready client (HR-Avatar's shared one, with its own base URL and auth); `$authHeader` is then unused
      * @return array<mixed>
      */
     private static function request(
@@ -757,15 +781,14 @@ final class AvatarProviderCatalogue
         string $authHeader,
         array|string $query,
         array $extraHeaders = [],
-        string $authScheme = '',
+        ?PendingRequest $client = null,
     ): array {
         if ($apiKey === '') {
             throw new CatalogueFetchException('provider_key_missing');
         }
 
         try {
-            $response = Http::withHeaders([$authHeader => $authScheme.$apiKey] + $extraHeaders)
-                ->timeout(self::TIMEOUT_SECONDS)
+            $response = ($client ?? Http::withHeaders([$authHeader => $apiKey] + $extraHeaders)->timeout(self::TIMEOUT_SECONDS))
                 ->get($url, $query);
         } catch (ConnectionException) {
             throw new CatalogueFetchException('provider_unreachable');

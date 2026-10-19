@@ -2292,7 +2292,6 @@
                                                             "array",
                                                             "null"
                                                         ],
-                                                        "description": "Persona is optional: a template may be pure provider config.",
                                                         "items": {}
                                                     },
                                                     "answer_min_seconds": {
@@ -2306,7 +2305,6 @@
                                                             "object",
                                                             "null"
                                                         ],
-                                                        "description": "The language model binding, by model key and credential name; `null` when the template has none.",
                                                         "properties": {
                                                             "model_key": {
                                                                 "type": "string"
@@ -2321,10 +2319,7 @@
                                                         ]
                                                     },
                                                     "hr_avatar_config_id": {
-                                                        "type": [
-                                                            "string",
-                                                            "null"
-                                                        ]
+                                                        "type": "string"
                                                     }
                                                 },
                                                 "required": [
@@ -2335,8 +2330,7 @@
                                                     "persona",
                                                     "answer_min_seconds",
                                                     "answer_max_seconds",
-                                                    "llm",
-                                                    "hr_avatar_config_id"
+                                                    "llm"
                                                 ]
                                             }
                                         }

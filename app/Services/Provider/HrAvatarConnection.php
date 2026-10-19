@@ -20,8 +20,12 @@ final class HrAvatarConnection
 {
     public const PROVIDER = 'hr_avatar';
 
-    /** The one format of an HR-Avatar config id, wherever one is accepted, stored or read back. */
-    public const CONFIG_ID_REGEX = '/^avc_[0-9A-Za-z]+$/';
+    /**
+     * The one format of an HR-Avatar config id, wherever one is accepted, stored or read back. Self-contained:
+     * the `D` modifier keeps `$` from also matching before a trailing newline, so every user of the constant
+     * (validation rule or `preg_match()`) refuses "avc_x\n".
+     */
+    public const CONFIG_ID_REGEX = '/^avc_[0-9A-Za-z]+$/D';
 
     public const CONFIG_ID_MAX_LENGTH = 64;
 
@@ -85,12 +89,11 @@ final class HrAvatarConnection
             ->timeout(15);
     }
 
-    /** The `D` modifier keeps `$` from also matching before a trailing newline. */
     public static function isConfigId(mixed $value): bool
     {
         return is_string($value)
             && strlen($value) <= self::CONFIG_ID_MAX_LENGTH
-            && preg_match(self::CONFIG_ID_REGEX.'D', $value) === 1;
+            && preg_match(self::CONFIG_ID_REGEX, $value) === 1;
     }
 
     /** Opaque, stable attribution value for an organization: no name, no personal data. */

@@ -14,8 +14,10 @@ use App\Services\Provider\HrAvatarConnection;
 use App\Support\AvatarTemplates\ConfigValidator;
 use App\Support\AvatarTemplates\TemplateDocument;
 use App\Support\Tenancy\TenantResolver;
+use Dedoc\Scramble\Attributes\Response as ResponseDoc;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -37,9 +39,14 @@ final class AvatarTemplatePortabilityController extends Controller
         private readonly TenantResolver $resolver,
     ) {}
 
+    // Internal note, not published (Scramble exports docblock prose as public text): the response shape is
+    // stated here because Scramble reads a conditionally added array member as required, and
+    // `hr_avatar_config_id` is emitted only for a template that has one (see `TemplateDocument::export()`).
+    // `config` and `persona` stay `array<mixed>` so their published schema lines are exactly what inference gave.
     /**
      * GET /api/avatar-templates/export
      */
+    #[ResponseDoc(200, type: 'array{schema: "'.TemplateDocument::SCHEMA.'", exported_at: string, templates: list<array{name: string, description: string|null, provider: string, config: array<mixed>, persona: array<mixed>|null, answer_min_seconds: int, answer_max_seconds: int, llm: array{model_key: string, credential_name: string}|null, hr_avatar_config_id?: string}>}')]
     public function export(): JsonResponse
     {
         $this->authorize('create', AvatarTemplate::class);
@@ -91,7 +98,7 @@ final class AvatarTemplatePortabilityController extends Controller
                 $problem = $this->reject($record);
 
                 if ($problem !== null) {
-                    $errors["templates.{$index}"] = [$problem];
+                    $errors["templates.{$index}"][] = $problem;
 
                     continue;
                 }
@@ -107,13 +114,14 @@ final class AvatarTemplatePortabilityController extends Controller
             ], 422);
         }
 
-        $created = array_map(fn (array $record): array => $this->create($record), $records);
+        // One transaction: a save can still refuse a record (I2/I3/I4), and the earlier ones must not stay.
+        $created = DB::transaction(fn (): array => array_map(fn (array $record): array => $this->create($record), $records));
 
         return response()->json(['data' => $created], 201);
     }
 
     /**
-     * @param  array{name: string, provider: string, config: array<string, mixed>, persona: array<string, mixed>|null, answer_min_seconds: mixed, answer_max_seconds: mixed, description: string|null, llm?: array{model_key: string, credential_name: string}|null, hr_avatar_config_id?: mixed}  $record
+     * @param  array{name: string, provider: string, config: array<mixed>, persona: array<mixed>|null, answer_min_seconds: mixed, answer_max_seconds: mixed, description: string|null, llm?: array{model_key: string, credential_name: string}|null, hr_avatar_config_id?: mixed}  $record
      */
     private function reject(array $record): ?string
     {
@@ -183,7 +191,7 @@ final class AvatarTemplatePortabilityController extends Controller
         // messages are flattened into one sentence the operator can act on.
         $flat = [];
 
-        array_walk_recursive($failures, function ($message) use (&$flat): void {
+        array_walk_recursive($failures, function (mixed $message) use (&$flat): void {
             $flat[] = (string) $message;
         });
 
@@ -216,7 +224,7 @@ final class AvatarTemplatePortabilityController extends Controller
     }
 
     /**
-     * @param  array{name: string, provider: string, config: array<string, mixed>, persona: array<string, mixed>|null, answer_min_seconds: mixed, answer_max_seconds: mixed, description: string|null, llm: array{model_key: string, credential_name: string}|null, hr_avatar_config_id?: mixed}  $record
+     * @param  array{name: string, provider: string, config: array<mixed>, persona: array<mixed>|null, answer_min_seconds: mixed, answer_max_seconds: mixed, description: string|null, llm: array{model_key: string, credential_name: string}|null, hr_avatar_config_id?: mixed}  $record
      * @return array<string, mixed>
      */
     private function create(array $record): array
@@ -284,8 +292,7 @@ final class AvatarTemplatePortabilityController extends Controller
 
         // Global registry — not tenant-scoped (design D1).
         $model = LlmModel::where('key', $llm['model_key'])->first();
-        // Tenant-scoped to the CURRENT (importing) organization via the
-        // TenantScoped global scope — never the exporting org's row.
+        // Also a platform row (credentials are global since 2026-09-14), looked up by its platform-unique name.
         $credential = LlmCredential::where('name', $llm['credential_name'])->first();
 
         $warnings = [];

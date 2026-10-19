@@ -193,3 +193,29 @@ test('another organization\'s id never appears in an export or in the copy it re
     $copies = TenantContextScope::runFor($c->id, fn () => AvatarTemplate::query()->pluck('hr_avatar_config_id')->all());
     expect($copies)->toBe(['avc_A']);
 });
+
+// ─── Import is all-or-nothing ────────────────────────────────────────────────
+
+test('an import whose second save fails creates no template at all', function (): void {
+    hraMakeAvailable();
+    $org = Organization::factory()->create();
+    $saves = 0;
+    AvatarTemplate::creating(function () use (&$saves): void {
+        if (++$saves === 2) {
+            throw new RuntimeException('second save failed');
+        }
+    });
+
+    hrpImport($org, [hrpEntry(['name' => 'First']), hrpEntry(['name' => 'Second'])])->assertStatus(500);
+
+    expect(DB::table('avatar_templates')->count())->toBe(0);
+});
+
+test('every refused record of one entry is reported, not only the last', function (): void {
+    $org = Organization::factory()->create();
+
+    $errors = hrpImport($org, [['name' => 'Tester', 'configs' => ['heygen' => ['bogusKey' => 1], 'tavus' => ['bogusKey' => 1]]]])
+        ->assertStatus(422)->json('errors');
+
+    expect($errors['templates.0'])->toHaveCount(2);
+});

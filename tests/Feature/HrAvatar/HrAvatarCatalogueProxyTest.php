@@ -12,12 +12,14 @@ declare(strict_types=1);
  */
 
 use App\Models\Organization;
+use App\Services\Provider\HrAvatarConnection;
 use App\Support\AvatarTemplates\AvatarProviderCatalogue;
 use GuzzleHttp\Promise\PromiseInterface;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Tests\Helpers\AvatarTemplates\TemplateActors;
 
 uses(RefreshDatabase::class);
@@ -292,4 +294,55 @@ test('avatar_config belongs to hr_avatar alone', function (): void {
         ->assertStatus(422)->assertJsonValidationErrors(['resource']);
 
     Http::assertNothingSent();
+});
+
+// ─── Truncation at the page cap ──────────────────────────────────────────────
+
+test('a result cut at the page cap is warned about without secrets and is not cached', function (): void {
+    $org = Organization::factory()->create();
+    Http::fake(fn () => hrcPage([hrcConfig('avc_'.uniqid(), $org->id)], 'cur_forever'));
+    Log::spy();
+
+    $response = $this->withToken(hrcAdmin($org))->getJson(HRC_URL)->assertOk();
+
+    expect($response->json('data.items'))->toHaveCount(10);
+    Log::shouldHaveReceived('warning')->once()->withArgs(function (string $message, array $context) use ($org): bool {
+        $payload = $message.json_encode($context);
+
+        return $context['organization'] === 'org_'.$org->id
+            && str_contains($message, 'truncated')
+            && ! str_contains($payload, 'cur_forever')
+            && ! str_contains($payload, (string) config('hr_avatar.secret_key'));
+    });
+    expect(Cache::has(AvatarProviderCatalogue::cacheKey('hr_avatar', 'avatar_config', $org->id)))->toBeFalse();
+
+    $this->withToken(hrcAdmin($org))->getJson(HRC_URL)->assertOk();
+    Http::assertSentCount(20);
+});
+
+test('a result that ends exactly on the page cap is complete: no warning and it is cached', function (): void {
+    $org = Organization::factory()->create();
+    $served = 0;
+    Http::fake(function () use ($org, &$served) {
+        $served++;
+
+        return hrcPage([hrcConfig('avc_'.$served, $org->id)], $served < 10 ? 'cur_'.$served : null);
+    });
+    Log::spy();
+
+    $this->withToken(hrcAdmin($org))->getJson(HRC_URL)->assertOk();
+
+    Log::shouldNotHaveReceived('warning');
+    expect(Cache::has(AvatarProviderCatalogue::cacheKey('hr_avatar', 'avatar_config', $org->id)))->toBeTrue();
+});
+
+test('the catalogue asks through the shared HR-Avatar client: bearer token, JSON accept and the shared timeout', function (): void {
+    $org = Organization::factory()->create();
+    Http::fake(fn () => hrcPage([hrcConfig('avc_1', $org->id)]));
+
+    $this->withToken(hrcAdmin($org))->getJson(HRC_URL)->assertOk();
+
+    Http::assertSent(fn (Request $request): bool => $request->hasHeader('Authorization', 'Bearer '.HrAvatarConnection::secretKey())
+        && $request->hasHeader('Accept', 'application/json')
+        && str_starts_with($request->url(), HrAvatarConnection::baseUrl().'/v1/avatar-configs'));
 });
