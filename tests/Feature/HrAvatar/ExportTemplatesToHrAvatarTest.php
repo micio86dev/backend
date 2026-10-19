@@ -10,6 +10,8 @@ declare(strict_types=1);
 use App\Models\LlmCredential;
 use App\Models\LlmModel;
 use App\Models\Organization;
+use App\Services\Provider\HrAvatarTemplateMapping;
+use App\Support\AvatarTemplates\ProviderFieldSpecs;
 use App\Support\Tenancy\TenantContextScope;
 use GuzzleHttp\Promise\PromiseInterface;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -163,12 +165,12 @@ test('the config sent drops the voice keys, binds an external voice and carries 
     hreRun(true);
 
     [$bound, $plain] = hreBodies();
-    expect($bound['config'])->toEqual(['avatarId' => 'a1', 'voiceId' => 'v1', 'voiceSpeed' => 1.1])
+    expect($bound['config'])->toEqual(['avatarId' => 'a1', 'voiceSpeed' => 1.1])
         ->and($bound['voice'])->toBe(['engine' => 'elevenlabs', 'voice_id' => 'ext_1'])
-        ->and($plain['config'])->toEqual(['faceId' => 'r1', 'palId' => 'p1'])
+        ->and($plain['config'])->toEqual(['replica_id' => 'r1', 'persona_id' => 'p1'])
         ->and($plain)->not->toHaveKey('voice');
     $sent = json_encode(hreBodies(), JSON_THROW_ON_ERROR);
-    expect($sent)->not->toContain('SENTINEL')->not->toContain('Zed-DISPLAY-NAME')->not->toContain('persona')
+    expect($sent)->not->toContain('SENTINEL')->not->toContain('Zed-DISPLAY-NAME')->not->toContain('"persona"')
         ->not->toContain('llm_model_id')->not->toContain('llm_credential_id')->not->toContain('gemini');
 });
 
@@ -279,4 +281,194 @@ test('an id set while the request was in flight is never overwritten', function 
 
     expect($exit)->toBe(1)->and($output)->toContain('failed write_conflict orphaned_config=avc_MINE');
     expect(DB::table('avatar_templates')->value('hr_avatar_config_id'))->toBe('avc_OTHER');
+});
+
+// ─── Key mapping (A6) ────────────────────────────────────────────────────────
+
+/** The keys HR-Avatar accepts, copied from its field specs (slice 15, `TavusFieldSpecs` / `LiveAvatarFieldSpecs`). */
+const HRE_HR_AVATAR_KEYS = [
+    'tavus' => [
+        'config' => ['replica_id', 'persona_id', 'participant_left_timeout', 'tts_model_name'],
+        'persona' => ['llm_temperature', 'llm_speculative_inference', 'turn_taking_patience', 'interruptibility', 'voice_isolation', 'idle_engagement'],
+    ],
+    'heygen' => [
+        'config' => ['avatarId', 'interactivityType', 'videoQuality', 'voiceSpeed', 'voiceStability', 'voiceSimilarityBoost', 'voiceStyle', 'voiceUseSpeakerBoost', 'ttsModelName'],
+        'persona' => [],
+    ],
+];
+
+test('parity: every BEAI provider key is mapped, a voice key or reported as dropped, and every target is a key HR-Avatar accepts', function (string $provider): void {
+    $beai = array_map(fn ($spec): string => $spec->key, ProviderFieldSpecs::for($provider));
+    $accounted = array_merge(
+        array_keys(HrAvatarTemplateMapping::KEYS[$provider]),
+        HrAvatarTemplateMapping::VOICE_KEYS[$provider],
+        HrAvatarTemplateMapping::DROPPED[$provider],
+    );
+
+    expect(array_values(array_diff($beai, $accounted)))->toBe([]);
+    expect(array_values(array_diff($accounted, $beai)))->toBe([]);
+
+    foreach (HrAvatarTemplateMapping::KEYS[$provider] as [$member, $target]) {
+        expect(HRE_HR_AVATAR_KEYS[$provider][$member])->toContain($target);
+    }
+    // HR-Avatar keys no BEAI key reaches would be dead entries in this table's reference list.
+    $targets = array_map(fn (array $row): string => $row[1], HrAvatarTemplateMapping::KEYS[$provider]);
+    expect(array_values(array_diff(array_merge(...array_values(HRE_HR_AVATAR_KEYS[$provider])), $targets)))
+        ->toBe($provider === 'tavus' ? ['participant_left_timeout'] : []);
+})->with(['tavus', 'heygen']);
+
+test('a Tavus template is exported with the replica and persona ids, the persona knobs split out and the voice bound', function (): void {
+    hraMakeAvailable();
+    hreTemplate(Organization::factory()->create(), 'tavus', ['config' => [
+        'faceId' => 'r1', 'palId' => 'p1', 'ttsEngine' => 'cartesia', 'ttsExternalVoiceId' => 'ext_1', 'ttsModelName' => 'sonic-3',
+        'llmTemperature' => 0.4, 'llmSpeculativeInference' => true, 'turnTakingPatience' => 'high', 'interruptibility' => 'low',
+        'voiceIsolation' => 'near', 'idleEngagement' => 'patient',
+        'audioOnly' => false, 'maxCallDurationSec' => 600, 'participantAbsentTimeoutSec' => 60, 'enableRecording' => true, 'enableClosedCaptions' => true,
+    ]]);
+    Http::fake(['*' => hreCreated('avc_A')]);
+
+    [$exit, $output] = hreRun(true);
+
+    [$body] = hreBodies();
+    expect($exit)->toBe(0)
+        ->and($body['config'])->toEqual(['replica_id' => 'r1', 'persona_id' => 'p1', 'tts_model_name' => 'sonic-3'])
+        ->and($body['persona'])->toEqual([
+            'llm_temperature' => 0.4, 'llm_speculative_inference' => true, 'turn_taking_patience' => 'high',
+            'interruptibility' => 'low', 'voice_isolation' => 'near', 'idle_engagement' => 'patient',
+        ])
+        ->and($body['voice'])->toBe(['engine' => 'cartesia', 'voice_id' => 'ext_1'])
+        ->and($output)->toContain('created avc_A sync_status=synced dropped_key=audioOnly,enableClosedCaptions,enableRecording,maxCallDurationSec,participantAbsentTimeoutSec')
+        ->and($output)->toContain('dropped_key: 1');
+});
+
+test('a HeyGen template keeps its settings, binds the stock voice and reports the keys HR-Avatar has no counterpart for', function (): void {
+    hraMakeAvailable();
+    hreTemplate(Organization::factory()->create(), 'heygen', ['config' => [
+        'avatarId' => 'a1', 'voiceId' => 'v1', 'interactivityType' => 'PUSH_TO_TALK', 'videoQuality' => 'high',
+        'maxSessionDurationSec' => 900, 'videoEncoding' => 'VP8',
+    ]]);
+    Http::fake(['*' => hreCreated('avc_A')]);
+
+    [$exit, $output] = hreRun(true);
+
+    [$body] = hreBodies();
+    expect($exit)->toBe(0)
+        ->and($body['config'])->toEqual(['avatarId' => 'a1', 'interactivityType' => 'PUSH_TO_TALK', 'videoQuality' => 'high'])
+        ->and($body['voice'])->toBe(['engine' => 'provider', 'voice_id' => 'v1'])
+        ->and($body)->not->toHaveKey('persona')
+        ->and($output)->toContain('dropped_key=maxSessionDurationSec,videoEncoding');
+});
+
+test('a setting that needs an external voice is dropped, and reported, when none is bound or the engine does not take it', function (): void {
+    hraMakeAvailable();
+    $org = Organization::factory()->create();
+    hreTemplate($org, 'heygen', ['name' => 'stock', 'config' => ['avatarId' => 'a1', 'voiceId' => 'v1', 'voiceSpeed' => 1.1, 'ttsModelName' => 'sonic-3']]);
+    hreTemplate($org, 'heygen', ['name' => 'cartesia', 'config' => ['avatarId' => 'a1', 'ttsEngine' => 'cartesia', 'ttsExternalVoiceId' => 'x', 'voiceSpeed' => 1.1, 'voiceStability' => 0.5]]);
+    hreTemplate($org, 'tavus', ['name' => 'auto', 'config' => ['faceId' => 'r', 'palId' => 'p', 'ttsEngine' => 'tavus-auto', 'ttsModelName' => 'sonic-3']]);
+    hreTemplate($org, 'tavus', ['name' => 'azure', 'config' => ['faceId' => 'r', 'palId' => 'p', 'ttsEngine' => 'azure', 'ttsExternalVoiceId' => 'az']]);
+    Http::fake(['*' => hreCreated('avc_A')]);
+
+    [$exit, $output] = hreRun(true);
+
+    [$stock, $cartesia, $auto, $azure] = hreBodies();
+    expect($exit)->toBe(0)
+        ->and($stock['config'])->toEqual(['avatarId' => 'a1'])
+        ->and($cartesia['config'])->toEqual(['avatarId' => 'a1', 'voiceSpeed' => 1.1])
+        ->and($auto['config'])->toEqual(['replica_id' => 'r', 'persona_id' => 'p'])
+        ->and($azure)->not->toHaveKey('voice')
+        ->and($output)->toContain('dropped_key=ttsModelName,voiceSpeed')
+        ->and($output)->toContain('dropped_key=voiceStability')
+        ->and($output)->toContain('dropped_key=ttsModelName')
+        ->and($output)->toContain('dropped_key=ttsEngine,ttsExternalVoiceId');
+});
+
+test('a key nobody mapped is reported as dropped and never sent', function (): void {
+    hraMakeAvailable();
+    hreTemplate(Organization::factory()->create(), 'tavus', ['config' => ['faceId' => 'r', 'palId' => 'p', 'brandNewKey' => 1]]);
+    Http::fake(['*' => hreCreated('avc_A')]);
+
+    [, $output] = hreRun(true);
+
+    expect(hreBodies()[0]['config'])->toEqual(['replica_id' => 'r', 'persona_id' => 'p'])
+        ->and($output)->toContain('dropped_key=brandNewKey');
+});
+
+test('a dry run reports the dropped keys too, without any request', function (): void {
+    hreTemplate(Organization::factory()->create(), 'heygen', ['config' => ['avatarId' => 'a1', 'voiceId' => 'v1', 'videoEncoding' => 'H264']]);
+
+    [$exit, $output] = hreRun();
+
+    expect($exit)->toBe(0)->and($output)->toContain('would_create dropped_key=videoEncoding');
+    Http::assertNothingSent();
+});
+
+// ─── R3-001: an external engine without its voice id ─────────────────────────
+
+test('an external engine without a voice id is reported as voice_missing, counted, never created and exits non-zero', function (bool $apply, mixed $voiceId): void {
+    hraMakeAvailable();
+    $org = Organization::factory()->create();
+    $config = ['avatarId' => 'a1', 'voiceId' => 'v1', 'ttsEngine' => 'elevenlabs'] + ($voiceId === false ? [] : ['ttsExternalVoiceId' => $voiceId]);
+    hreTemplate($org, 'heygen', ['name' => 'Broken', 'config' => $config]);
+    hreTemplate($org, 'tavus', ['name' => 'Fine']);
+    Http::fake(['*' => hreCreated('avc_OK')]);
+
+    [$exit, $output] = hreRun($apply);
+
+    expect($exit)->toBe(1)
+        ->and($output)->toContain('name="Broken" failed voice_missing')
+        ->and($output)->toContain('failed: 1');
+    expect(array_column(hreRows(), 'hr_avatar_config_id'))->toBe([null, $apply ? 'avc_OK' : null]);
+    $apply ? Http::assertSentCount(1) : Http::assertNothingSent();
+})->with([
+    'apply, id absent' => [true, false],
+    'apply, id empty' => [true, ''],
+    'dry run, id null' => [false, null],
+]);
+
+// ─── R3-002: a timeout may have created the config ───────────────────────────
+
+test('an unreachable upstream is ambiguous: reported as such with the advice, sent once, never retried', function (): void {
+    hraMakeAvailable();
+    $org = Organization::factory()->create();
+    hreTemplate($org);
+    $attempts = 0;
+    Http::fake(['*' => function () use (&$attempts): never {
+        $attempts++;
+
+        throw new ConnectionException('upstream-detail');
+    }]);
+
+    [$exit, $output] = hreRun(true);
+
+    expect($attempts)->toBe(1)
+        ->and($exit)->toBe(1)
+        ->and($output)->toContain('failed provider_unreachable_ambiguous')
+        ->and($output)->toContain('may have created')->toContain('external_ref=org_'.$org->id)
+        ->and($output)->not->toContain('upstream-detail');
+});
+
+// ─── R3-003: the link write may fail after the config was created ────────────
+
+test('a failing link write prints the orphaned config, counts as failed and the next template is still exported', function (): void {
+    hraMakeAvailable();
+    $org = Organization::factory()->create();
+    hreTemplate($org, 'tavus', ['name' => 'first']);
+    hreTemplate($org, 'tavus', ['name' => 'second']);
+    Http::fake(['*' => Http::sequence()->push(['id' => 'avc_ONE', 'sync_status' => 'synced'], 201)->push(['id' => 'avc_TWO', 'sync_status' => 'synced'], 201)]);
+    $thrown = false;
+    DB::beforeExecuting(function (string $query) use (&$thrown): void {
+        if (! $thrown && str_starts_with($query, 'update "avatar_templates"')) {
+            $thrown = true;
+
+            throw new RuntimeException('connection lost: secret-sql-detail');
+        }
+    });
+
+    [$exit, $output] = hreRun(true);
+
+    expect($exit)->toBe(1)
+        ->and($output)->toContain('name="first" failed link_write_failed orphaned_config=avc_ONE')
+        ->and($output)->toContain('created avc_TWO')
+        ->and($output)->not->toContain('secret-sql-detail');
+    expect(array_column(hreRows(), 'hr_avatar_config_id'))->toBe([null, 'avc_TWO']);
 });
