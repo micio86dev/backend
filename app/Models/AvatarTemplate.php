@@ -223,65 +223,80 @@ class AvatarTemplate extends TenantModel implements AdmitsPlatformRows
             $template->syncOriginalAttributes(['llm_model_id', 'llm_credential_id']);
         });
 
-        static::saving(function (self $template): void {
-            // Unbound is always legal; I1's CHECK handles the half-bound
-            // case at the database. Nothing to check here.
-            if ($template->llm_model_id === null && $template->llm_credential_id === null) {
-                return;
-            }
+        static::saving(fn (self $template) => $template->assertLlmBindingValid());
+    }
 
-            $model = LlmModel::find($template->llm_model_id);
+    /**
+     * The binding invariants, checked on the CURRENT attribute values.
+     *
+     * Run by the `saving` hook for every write path, and by the template
+     * controllers BEFORE they bind an external HeyGen voice: that bind is an
+     * irreversible side effect, so no refusal this hook can raise may come
+     * after it. Throws the same exceptions either way, so a 422 body does not
+     * depend on which of the two raised it.
+     *
+     * @throws InvalidLlmBindingException
+     * @throws UnsupportedLlmModeException
+     */
+    public function assertLlmBindingValid(): void
+    {
+        // Unbound is always legal; I1's CHECK handles the half-bound
+        // case at the database. Nothing to check here.
+        if ($this->llm_model_id === null && $this->llm_credential_id === null) {
+            return;
+        }
 
-            if ($model === null) {
-                throw new InvalidLlmBindingException('llm_model_id', 'model_not_found');
-            }
+        $model = LlmModel::find($this->llm_model_id);
 
-            // I5 — a withdrawn (`is_available = false`) model cannot be
-            // NEWLY bound. Gated on `isDirty('llm_model_id')` deliberately:
-            // a template already bound to a model that later becomes
-            // unavailable MUST keep saving for unrelated field changes
-            // (renaming it, changing its voice settings) — that is the
-            // entire point of "mark unavailable, never delete" (design D1).
-            // Rejecting every unrelated edit to a grandfathered template
-            // would be a worse bug than the one this guard fixes.
-            if ($template->isDirty('llm_model_id') && ! $model->is_available) {
-                throw new InvalidLlmBindingException('llm_model_id', 'model_unavailable');
-            }
+        if ($model === null) {
+            throw new InvalidLlmBindingException('llm_model_id', 'model_not_found');
+        }
 
-            // I2 — native_duplex is refused at every write path.
-            if ($model->capability->mode() !== LlmMode::Managed) {
-                throw new UnsupportedLlmModeException('llm_model_id');
-            }
+        // I5 — a withdrawn (`is_available = false`) model cannot be
+        // NEWLY bound. Gated on `isDirty('llm_model_id')` deliberately:
+        // a template already bound to a model that later becomes
+        // unavailable MUST keep saving for unrelated field changes
+        // (renaming it, changing its voice settings) — that is the
+        // entire point of "mark unavailable, never delete" (design D1).
+        // Rejecting every unrelated edit to a grandfathered template
+        // would be a worse bug than the one this guard fixes.
+        if ($this->isDirty('llm_model_id') && ! $model->is_available) {
+            throw new InvalidLlmBindingException('llm_model_id', 'model_unavailable');
+        }
 
-            // I3 — the credential must EXIST. It no longer has to belong to
-            // anyone: credentials became platform rows (RATIFIED 2026-09-14),
-            // so the ownership half of this guard was refusing the only
-            // arrangement the product now has.
-            //
-            // What went with it, and why none of it is a loss:
-            //   - the `$ownerOrgId` derivation, including the `saving`-fires-
-            //     before-`creating` gotcha it existed to dodge — nothing
-            //     compares against an owning org any more;
-            //   - the `MissingTenantContextException` on a null org, which was
-            //     protecting that comparison and not the binding;
-            //   - `withoutGlobalScopes()`, which defeated a tenant scope
-            //     `LlmCredential` no longer carries.
-            //
-            // The existence-oracle concern that shaped the original message is
-            // also moot — there is one visible set of credentials now, so "no
-            // such credential" leaks nothing about anybody else. The code is
-            // kept verbatim because it is a published 422 body.
-            $credential = LlmCredential::find($template->llm_credential_id);
+        // I2 — native_duplex is refused at every write path.
+        if ($model->capability->mode() !== LlmMode::Managed) {
+            throw new UnsupportedLlmModeException('llm_model_id');
+        }
 
-            if ($credential === null) {
-                throw new InvalidLlmBindingException('llm_credential_id', 'credential_not_found');
-            }
+        // I3 — the credential must EXIST. It no longer has to belong to
+        // anyone: credentials became platform rows (RATIFIED 2026-09-14),
+        // so the ownership half of this guard was refusing the only
+        // arrangement the product now has.
+        //
+        // What went with it, and why none of it is a loss:
+        //   - the `$ownerOrgId` derivation, including the `saving`-fires-
+        //     before-`creating` gotcha it existed to dodge — nothing
+        //     compares against an owning org any more;
+        //   - the `MissingTenantContextException` on a null org, which was
+        //     protecting that comparison and not the binding;
+        //   - `withoutGlobalScopes()`, which defeated a tenant scope
+        //     `LlmCredential` no longer carries.
+        //
+        // The existence-oracle concern that shaped the original message is
+        // also moot — there is one visible set of credentials now, so "no
+        // such credential" leaks nothing about anybody else. The code is
+        // kept verbatim because it is a published 422 body.
+        $credential = LlmCredential::find($this->llm_credential_id);
 
-            // I4 — the credential's vendor must match the model's vendor.
-            if ($credential->vendor !== $model->vendor) {
-                throw new InvalidLlmBindingException('llm_credential_id', 'vendor_mismatch');
-            }
-        });
+        if ($credential === null) {
+            throw new InvalidLlmBindingException('llm_credential_id', 'credential_not_found');
+        }
+
+        // I4 — the credential's vendor must match the model's vendor.
+        if ($credential->vendor !== $model->vendor) {
+            throw new InvalidLlmBindingException('llm_credential_id', 'vendor_mismatch');
+        }
     }
 
     /** @return BelongsTo<LlmModel, $this> */

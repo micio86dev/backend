@@ -158,7 +158,8 @@ final class PlatformAvatarTemplateController extends Controller
 
         $this->assertConfigValid($validated['provider'], $validated['config']);
         $this->assertNameFreeAmong(AvatarTemplate::platformOnly(), $validated['name'], null);
-        // After every validation (the name included): the bind is not undoable. Only a lost name race or a failed write can still refuse the request.
+        // The binding is a validation too: the `saving` hook would raise it only after the bind, which is not undoable.
+        (new AvatarTemplate($validated))->assertLlmBindingValid();
         app(BindHeygenTemplateVoice::class)->run($validated['provider'], $validated['config']);
 
         $template = $this->answeringPlatformNameRace(fn (): AvatarTemplate => $this->context->run($actor, fn (): AvatarTemplate => DB::transaction(function () use ($validated, $actor): AvatarTemplate {
@@ -222,7 +223,9 @@ final class PlatformAvatarTemplateController extends Controller
             $this->assertNameFreeAmong(AvatarTemplate::platformOnly(), $validated['name'], $template->id);
         }
 
-        // After every validation (the name included): the bind is not undoable. Only a lost name race or a failed write can still refuse the request.
+        // On a copy: the original is read below for the audit trail. The `saving` hook would raise this only after the bind.
+        (clone $template)->fill($validated)->assertLlmBindingValid();
+
         if (array_key_exists('config', $validated)) {
             app(BindHeygenTemplateVoice::class)->run($template->provider, $validated['config']);
         }
