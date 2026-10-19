@@ -49,6 +49,10 @@ final class ProviderPreflight
      */
     public function check(string $provider, ?int $projectId): array
     {
+        if ($provider === HrAvatarConnection::PROVIDER) {
+            return $this->logged($provider, $projectId, $this->hrAvatar($projectId));
+        }
+
         if (! in_array($provider, ['tavus', 'heygen'], true)) {
             // `mock` (test mode) and anything else has no external dependency.
             return [];
@@ -64,12 +68,49 @@ final class ProviderPreflight
             $errors = TemplateReferenceValidator::validate($provider, $templateConfig);
         }
 
+        return $this->logged($provider, $projectId, $errors);
+    }
+
+    /**
+     * @param  list<array{key: string, code: string}>  $errors
+     * @return list<array{key: string, code: string}>
+     */
+    private function logged(string $provider, ?int $projectId, array $errors): array
+    {
         if ($errors !== []) {
             Log::warning('Interview pre-flight refused the start', [
                 'provider' => $provider,
                 'project_id' => $projectId,
                 'reasons' => $errors,
             ]);
+        }
+
+        return $errors;
+    }
+
+    /**
+     * HR-Avatar needs its integration configured and a linked config on the pinned template.
+     * Both are operator faults, so they refuse here with existing codes rather than at `issue()`,
+     * where they would burn a session.
+     *
+     * @return list<array{key: string, code: string}>
+     */
+    private function hrAvatar(?int $projectId): array
+    {
+        $errors = [];
+
+        if (! HrAvatarConnection::isAvailable()) {
+            $errors[] = ['key' => 'credentials', 'code' => 'provider_key_missing'];
+        }
+
+        try {
+            $configId = $this->templates->resolve(HrAvatarConnection::PROVIDER, $projectId)?->hr_avatar_config_id;
+        } catch (Throwable) {
+            $configId = null;
+        }
+
+        if ($this->blank($configId)) {
+            $errors[] = ['key' => 'hr_avatar_config_id', 'code' => 'avatar_missing'];
         }
 
         return $errors;
