@@ -54,6 +54,7 @@ use Illuminate\Support\Carbon;
  * @property int $answer_max_seconds
  * @property int|null $llm_model_id
  * @property int|null $llm_credential_id
+ * @property string|null $hr_avatar_config_id Opaque HR-Avatar `avc_...` id; NULL unless the template runs on HR-Avatar
  * @property string|null $heygen_llm_configuration_id
  * @property string|null $llm_sync_status
  * @property Carbon|null $llm_synced_at
@@ -99,6 +100,7 @@ class AvatarTemplate extends TenantModel implements AdmitsPlatformRows
         // I3/I4 guards below (pluggable-conversation-llm PR P3a, design D4).
         'llm_model_id',
         'llm_credential_id',
+        'hr_avatar_config_id',
     ];
 
     /** @return array<string, string> */
