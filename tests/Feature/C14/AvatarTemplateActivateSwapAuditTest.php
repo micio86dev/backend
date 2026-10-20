@@ -43,11 +43,12 @@ test('activating a template audits the deactivation of the one it replaces', fun
         ->postJson("/api/avatar-templates/{$new->id}/activate")
         ->assertOk();
 
+    expect(swapAudit('avatar_template.deactivated'))->toHaveCount(1)
+        ->and(swapAudit('avatar_template.activated'))->toHaveCount(1);
+
     [$deactivated] = swapAudit('avatar_template.deactivated');
 
-    expect(swapAudit('avatar_template.deactivated'))->toHaveCount(1)
-        ->and(swapAudit('avatar_template.activated'))->toHaveCount(1)
-        ->and((int) $deactivated->subject_id)->toBe($old->id)
+    expect((int) $deactivated->subject_id)->toBe($old->id)
         ->and((int) $deactivated->organization_id)->toBe($org->id)
         ->and($deactivated->actor_id)->not->toBeNull()
         ->and($deactivated->before)->toBe(['name' => 'Old face', 'provider' => 'heygen']);

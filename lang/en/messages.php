@@ -35,5 +35,13 @@ return [
         ],
     ],
 
+    'avatar_templates' => [
+        'provider_immutable' => 'The provider cannot be changed after creation. Create a new template instead.',
+        'answer_range' => 'The maximum answer time must be greater than the minimum.',
+        'name_taken' => 'A template with this name already exists.',
+        'persona_key' => 'The persona carries a key that is not accepted.',
+        'activation_race' => 'Another template of this provider was activated at the same time. Reload and try again.',
+    ],
+
     'welcome' => 'Welcome',
 ];

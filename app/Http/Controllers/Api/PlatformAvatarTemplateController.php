@@ -216,7 +216,7 @@ final class PlatformAvatarTemplateController extends Controller
         // fall back to the environment defaults.
         if ($request->has('provider') && $request->input('provider') !== $template->provider) {
             throw ValidationException::withMessages([
-                'provider' => 'The provider cannot be changed after creation. Create a new template instead.',
+                'provider' => __('messages.avatar_templates.provider_immutable'),
             ]);
         }
 

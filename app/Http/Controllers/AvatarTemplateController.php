@@ -323,7 +323,7 @@ final class AvatarTemplateController extends Controller
         // template is one click and leaves an audit trail.
         if ($request->has('provider') && $request->input('provider') !== $template->provider) {
             throw ValidationException::withMessages([
-                'provider' => 'The provider cannot be changed after creation. Create a new template instead.',
+                'provider' => __('messages.avatar_templates.provider_immutable'),
             ]);
         }
 
@@ -543,7 +543,7 @@ final class AvatarTemplateController extends Controller
         // can catch that before a candidate does.
         $this->assertConfigValid($template->provider, $template->config);
 
-        $replaced = DB::transaction(function () use ($template): Collection {
+        $replaced = $this->answeringActivationRace(fn (): Collection => DB::transaction(function () use ($template): Collection {
             // Narrowed to the SAME provider (pluggable-conversation-llm PR
             // P0, design D0). An organization may hold one active template
             // PER PROVIDER simultaneously — deactivating across every
@@ -554,10 +554,14 @@ final class AvatarTemplateController extends Controller
             // implicit tenant scope: that scope filters nothing under superadmin
             // bypass, so a bare superadmin used to deactivate the active
             // template of EVERY organization on this provider.
+            //
+            // Locked, so a concurrent activation waits and the swap (and its audit
+            // rows) is decided on the state this transaction really changes.
             $previous = AvatarTemplate::where('organization_id', $template->organization_id)
                 ->where('is_active', true)
                 ->where('provider', $template->provider)
                 ->whereKeyNot($template->id)
+                ->lockForUpdate()
                 ->get();
 
             AvatarTemplate::whereKey($previous->modelKeys())->update(['is_active' => false]);
@@ -565,7 +569,7 @@ final class AvatarTemplateController extends Controller
             $template->update(['is_active' => true]);
 
             return $previous;
-        });
+        }));
 
         foreach ($replaced as $previous) {
             app(AuditRecorder::class)->record(

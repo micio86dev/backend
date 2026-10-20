@@ -55,7 +55,7 @@ trait ValidatesAvatarTemplateWrites
 
         if ($min >= $max) {
             throw ValidationException::withMessages([
-                'answer_max_seconds' => 'The maximum answer time must be greater than the minimum.',
+                'answer_max_seconds' => __('messages.avatar_templates.answer_range'),
             ]);
         }
     }
@@ -118,7 +118,7 @@ trait ValidatesAvatarTemplateWrites
         return [
             'persona' => ['sometimes', 'array', static function (string $attribute, mixed $value, Closure $fail): void {
                 if (is_array($value) && array_diff(array_keys($value), ['display_name']) !== []) {
-                    $fail('The persona carries a key that is not accepted.');
+                    $fail(__('messages.avatar_templates.persona_key'));
                 }
             }],
             'persona.display_name' => ['nullable', new PersonaDisplayName],
@@ -255,6 +255,33 @@ trait ValidatesAvatarTemplateWrites
     }
 
     /**
+     * Activation reads the template it replaces and then activates its own, so two operators activating different
+     * templates of one organization and provider can both pass the read. The partial unique index
+     * `avatar_templates_one_active_per_org_provider` is the real guard: it never lets two be active, and refuses the
+     * loser. That refusal means "someone else activated one first", so it is a 422 on `is_active`, not a 500. Only
+     * THIS index is translated.
+     *
+     * @template T
+     *
+     * @param  Closure(): T  $write
+     * @return T
+     */
+    private function answeringActivationRace(Closure $write): mixed
+    {
+        try {
+            return $write();
+        } catch (UniqueConstraintViolationException $e) {
+            if (! str_contains($e->getMessage(), 'avatar_templates_one_active_per_org_provider')) {
+                throw $e;
+            }
+
+            throw ValidationException::withMessages([
+                'is_active' => __('messages.avatar_templates.activation_race'),
+            ]);
+        }
+    }
+
+    /**
      * `assertAnswerRangeOrdered()` reads the stored range before the write, so two concurrent
      * one-field PATCHes can each pass it and the second then meets the other's value. The CHECK
      * `avatar_templates_answer_range` is the real guard and refuses the loser; that is the same
@@ -276,7 +303,7 @@ trait ValidatesAvatarTemplateWrites
             }
 
             throw ValidationException::withMessages([
-                'answer_max_seconds' => 'The maximum answer time must be greater than the minimum.',
+                'answer_max_seconds' => __('messages.avatar_templates.answer_range'),
             ]);
         }
     }
@@ -284,7 +311,7 @@ trait ValidatesAvatarTemplateWrites
     private function nameTaken(): ValidationException
     {
         return ValidationException::withMessages([
-            'name' => 'A template with this name already exists.',
+            'name' => __('messages.avatar_templates.name_taken'),
         ]);
     }
 
