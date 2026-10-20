@@ -284,6 +284,11 @@ final class AvatarTemplateController extends Controller
             after: ['name' => $template->name, 'provider' => $template->provider],
         );
 
+        // Bound at creation: audited like the same binding made by an edit.
+        if ($template->llm_model_id !== null || $template->llm_credential_id !== null) {
+            $this->recordBindingChange($template->refresh(), null);
+        }
+
         return (new AvatarTemplateResource($template))
             ->additional($this->recordSync($template))
             ->response()

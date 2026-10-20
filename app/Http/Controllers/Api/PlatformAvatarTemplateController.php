@@ -174,6 +174,11 @@ final class PlatformAvatarTemplateController extends Controller
                 ['name' => $template->name, 'provider' => $template->provider, 'scope' => 'platform'],
             );
 
+            // Bound at creation: audited like the same binding made by an edit.
+            if ($template->llm_model_id !== null || $template->llm_credential_id !== null) {
+                $this->audit->record($actor->id, 'avatar_template.llm_bound', 'avatar_template', $template->id, null, $this->bindingNames($template->refresh()));
+            }
+
             return $template;
         })));
 
