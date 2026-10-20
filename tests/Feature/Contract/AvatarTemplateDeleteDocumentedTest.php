@@ -79,3 +79,32 @@ test('the template_active variant carries no counts', function (): void {
         ->and($variant['properties'])->not->toHaveKey('project_count')
         ->and($variant['properties'])->not->toHaveKey('organization_count');
 });
+
+/**
+ * @return array<string, mixed>
+ */
+function adConflict(string $path): array
+{
+    return adSpec()['paths'][$path]['delete']['responses']['409'];
+}
+
+test('the 409 of both delete routes is described by its two codes, not by controller rationale', function (string $path): void {
+    $description = adConflict($path)['description'];
+
+    expect($description)->toContain('template_active')->toContain('template_in_use')
+        ->and($description)->not->toContain('a decision, not a cleanup')
+        ->and($description)->not->toContain('409 rather than 422');
+})->with(['organization' => '/avatar-templates/{id}', 'platform' => '/admin/avatar-templates/{id}']);
+
+test('every organization 409 variant types message as the exact value the server sends', function (string $error): void {
+    $variant = adOrgConflictVariant($error);
+
+    expect($variant['properties']['message'])->toBe(['type' => 'string', 'const' => $error]);
+})->with(['template_in_use', 'template_active']);
+
+test('the platform 409 types message as one of its two codes, like error', function (): void {
+    $properties = adConflict('/admin/avatar-templates/{id}')['content']['application/json']['schema']['properties'];
+
+    expect($properties['message']['enum'])->toEqualCanonicalizing(['template_active', 'template_in_use'])
+        ->and($properties['message']['enum'])->toEqualCanonicalizing($properties['error']['enum']);
+});

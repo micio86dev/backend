@@ -641,6 +641,7 @@ final class AvatarTemplateController extends Controller
         return new AvatarTemplateResource($template->fresh());
     }
 
+    #[ResponseDoc(409, description: 'Still active (`template_active`) or pinned by projects (`template_in_use`, with counts).')]
     public function destroy(int $id): JsonResponse
     {
         $template = AvatarTemplate::findOrFail($id);

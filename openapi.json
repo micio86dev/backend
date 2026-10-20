@@ -2241,7 +2241,7 @@
                         "description": "No content"
                     },
                     "409": {
-                        "description": "Deleting what candidates are currently being interviewed with is\na decision, not a cleanup. 409 rather than 422: the request is\nwell-formed, the state is what refuses it.",
+                        "description": "Still active (`template_active`) or pinned by projects (`template_in_use`, with counts).",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -9618,7 +9618,11 @@
                                             ]
                                         },
                                         "message": {
-                                            "type": "string"
+                                            "type": "string",
+                                            "enum": [
+                                                "template_active",
+                                                "template_in_use"
+                                            ]
                                         },
                                         "project_count": {
                                             "type": "integer"
