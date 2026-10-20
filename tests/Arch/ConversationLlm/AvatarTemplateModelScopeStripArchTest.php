@@ -11,7 +11,6 @@ declare(strict_types=1);
  * `AvatarTemplateDeletedHookScopeTest`; the two scopes by `AvatarTemplateScopeEntryPointsArchTest`.
  */
 $avatarTemplateScopeStrips = [
-    'static::withoutGlobalScope(self::SCOPE_EXCLUDE_PLATFORM_ROWS)' => 'deleted hook: strips only the platform-row exclusion (a platform template is deleted through it) and the soft-delete scope via withTrashed(); the tenant scope stays on, and the update is keyed by primary key.',
     '$query->withoutGlobalScopes([\'tenant\', self::SCOPE_EXCLUDE_PLATFORM_ROWS]);' => 'scopeAvailableToTenant(): drops the scopes and re-applies the organization filter itself, failing closed without a context.',
     '->withoutGlobalScopes([\'tenant\', self::SCOPE_EXCLUDE_PLATFORM_ROWS])' => 'scopePlatformOnly(): reads platform rows, then filters on organization_id IS NULL.',
 ];
@@ -26,4 +25,15 @@ test('every scope strip in the AvatarTemplate model is a named, justified call s
     }
 
     expect($found)->toEqualCanonicalizing(array_keys($avatarTemplateScopeStrips));
+});
+
+test('the deleted hook unbinds through the base query builder and strips no scope', function (): void {
+    $source = (string) file_get_contents(app_path('Models/AvatarTemplate.php'));
+
+    preg_match('/private static function unbindAfterSoftDelete\(.*?\n    \}\n/s', $source, $body);
+
+    expect($body)->not->toBeEmpty()
+        ->and($body[0])->not->toContain('withoutGlobalScope')
+        ->and($body[0])->not->toContain('withTrashed')
+        ->and($body[0])->toContain('->getConnection()->table(');
 });

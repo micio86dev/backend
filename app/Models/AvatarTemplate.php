@@ -216,8 +216,15 @@ class AvatarTemplate extends TenantModel implements AdmitsPlatformRows
      * `deleting` hook are silently dropped, and this has to happen
      * after the row is already marked deleted.
      *
-     * Confined to this row by tests/Feature/C14/AvatarTemplateDeletedHookScopeTest.php; the scope strips of
-     * this model are pinned by tests/Arch/ConversationLlm/AvatarTemplateModelScopeStripArchTest.php.
+     * Strips no Eloquent global scope: it updates through the base query builder, keyed on the primary key of
+     * the instance the caller already resolved. That is tenant-safe because the key comes from a model that was
+     * loaded through the tenant-scoped query (or written under the platform context that
+     * `PlatformTemplateContext` guards), so the update can touch only that one row. It must not depend on the
+     * ambient tenant context: the delete can run in a context that does not own the row (a platform template
+     * deleted under an organization context, a template deleted with no context at all), and a scoped update
+     * would match zero rows and bring the credential foreign key refusal back. Pinned by
+     * tests/Feature/C14/AvatarTemplateDeletedHookScopeTest.php and
+     * tests/Arch/ConversationLlm/AvatarTemplateModelScopeStripArchTest.php.
      */
     private static function unbindAfterSoftDelete(self $template): void
     {
@@ -225,9 +232,8 @@ class AvatarTemplate extends TenantModel implements AdmitsPlatformRows
             return;
         }
 
-        static::withoutGlobalScope(self::SCOPE_EXCLUDE_PLATFORM_ROWS)
-            ->withTrashed()
-            ->whereKey($template->getKey())
+        $template->getConnection()->table($template->getTable())
+            ->where($template->getKeyName(), $template->getKey())
             ->update(['llm_model_id' => null, 'llm_credential_id' => null]);
 
         $template->llm_model_id = null;
@@ -261,8 +267,8 @@ class AvatarTemplate extends TenantModel implements AdmitsPlatformRows
      */
     public function assertLlmBindingValid(): void
     {
-        // Unbound is always legal; I1's CHECK handles the half-bound
-        // case at the database. Nothing to check here.
+        // Both null is unbound, always legal. A half-bound row falls through and is refused below
+        // (the missing side fails its lookup); I1's CHECK is the database backstop for writes that skip this hook.
         if ($this->llm_model_id === null && $this->llm_credential_id === null) {
             return;
         }
@@ -316,6 +322,10 @@ class AvatarTemplate extends TenantModel implements AdmitsPlatformRows
      * there is nothing to pass wrongly. With no context at all it FAILS
      * CLOSED: `organization_id = NULL OR organization_id IS NULL` would hand
      * every platform row to a caller that established no tenant.
+     *
+     * Under the superadmin bypass (`TenantResolver::isBypass()`) it applies no
+     * organization filter at all: every organization's rows and every platform
+     * row are returned, which is the bypass's purpose (the platform routes).
      *
      * NOTE: `has()` / `whereHas()` on a relation using this scope merge the
      * removed scopes back in; no such call exists today.

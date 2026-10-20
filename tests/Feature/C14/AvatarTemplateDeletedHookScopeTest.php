@@ -13,6 +13,8 @@ use App\Models\AvatarTemplate;
 use App\Models\LlmCredential;
 use App\Models\LlmModel;
 use App\Models\Organization;
+use App\Models\User;
+use App\Support\AvatarTemplates\PlatformTemplateContext;
 use App\Support\Tenancy\TenantContextScope;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -105,4 +107,70 @@ test('deleting a bound platform template through the platform route unbinds it a
     foreach ([$otherPlatform, $ownedByOrg] as $untouched) {
         expect(dhsRow($untouched))->toBe([$model->id, $credential->id, null]);
     }
+});
+
+/**
+ * The hook must unbind the deleted row whatever tenant context the delete runs in (hr-avatar-adapter A13, R3-001):
+ * a keyed update that kept the tenant scope silently matched zero rows when the context did not own the row, and
+ * the ON DELETE RESTRICT credential foreign key (a 500 on credential removal) came back.
+ */
+test('soft-deleting a bound platform template while another organization context is bound unbinds it', function (): void {
+    [$model, $credential] = dhsBinding();
+    $other = Organization::factory()->create();
+    $platform = AvatarTemplate::withoutGlobalScopes()->findOrFail(dhsBoundTemplate(null, 'Platform', $model, $credential));
+    $untouched = dhsBoundTemplate($other->id, 'Other org', $model, $credential);
+    $superadmin = User::factory()->create(['organization_id' => null, 'is_superadmin' => true]);
+
+    TenantContextScope::runFor($other->id, fn () => app(PlatformTemplateContext::class)->run($superadmin, fn () => $platform->delete()));
+
+    [$deletedModel, $deletedCredential, $deletedAt] = dhsRow($platform->id);
+    expect($deletedModel)->toBeNull()
+        ->and($deletedCredential)->toBeNull()
+        ->and($deletedAt)->not->toBeNull()
+        ->and(dhsRow($untouched))->toBe([$model->id, $credential->id, null]);
+});
+
+test('soft-deleting a bound platform template with no tenant context bound unbinds it', function (): void {
+    [$model, $credential] = dhsBinding();
+    $org = Organization::factory()->create();
+    $platform = AvatarTemplate::withoutGlobalScopes()->findOrFail(dhsBoundTemplate(null, 'Platform', $model, $credential));
+    $untouched = dhsBoundTemplate($org->id, 'Org', $model, $credential);
+    $superadmin = User::factory()->create(['organization_id' => null, 'is_superadmin' => true]);
+
+    app(PlatformTemplateContext::class)->run($superadmin, fn () => $platform->delete());
+
+    [$deletedModel, $deletedCredential, $deletedAt] = dhsRow($platform->id);
+    expect($deletedModel)->toBeNull()
+        ->and($deletedCredential)->toBeNull()
+        ->and($deletedAt)->not->toBeNull()
+        ->and(dhsRow($untouched))->toBe([$model->id, $credential->id, null]);
+});
+
+test('soft-deleting a bound organization template while another organization context is bound unbinds it', function (): void {
+    [$model, $credential] = dhsBinding();
+    $owner = Organization::factory()->create();
+    $other = Organization::factory()->create();
+    $template = AvatarTemplate::withoutGlobalScopes()->findOrFail(dhsBoundTemplate($owner->id, 'Owner', $model, $credential));
+    $untouched = dhsBoundTemplate($other->id, 'Other org', $model, $credential);
+
+    TenantContextScope::runFor($other->id, fn () => $template->delete());
+
+    [$deletedModel, $deletedCredential, $deletedAt] = dhsRow($template->id);
+    expect($deletedModel)->toBeNull()
+        ->and($deletedCredential)->toBeNull()
+        ->and($deletedAt)->not->toBeNull()
+        ->and(dhsRow($untouched))->toBe([$model->id, $credential->id, null]);
+});
+
+test('soft-deleting a bound organization template with no tenant context bound unbinds it', function (): void {
+    [$model, $credential] = dhsBinding();
+    $owner = Organization::factory()->create();
+    $template = AvatarTemplate::withoutGlobalScopes()->findOrFail(dhsBoundTemplate($owner->id, 'Owner', $model, $credential));
+
+    $template->delete();
+
+    [$deletedModel, $deletedCredential, $deletedAt] = dhsRow($template->id);
+    expect($deletedModel)->toBeNull()
+        ->and($deletedCredential)->toBeNull()
+        ->and($deletedAt)->not->toBeNull();
 });
