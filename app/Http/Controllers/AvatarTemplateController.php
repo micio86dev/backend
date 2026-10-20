@@ -21,6 +21,7 @@ use App\Support\AvatarTemplates\ProviderFieldSpecs;
 use App\Support\Tenancy\TenantResolver;
 use Dedoc\Scramble\Attributes\Response as ResponseDoc;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -542,7 +543,7 @@ final class AvatarTemplateController extends Controller
         // can catch that before a candidate does.
         $this->assertConfigValid($template->provider, $template->config);
 
-        DB::transaction(function () use ($template): void {
+        $replaced = DB::transaction(function () use ($template): Collection {
             // Narrowed to the SAME provider (pluggable-conversation-llm PR
             // P0, design D0). An organization may hold one active template
             // PER PROVIDER simultaneously — deactivating across every
@@ -553,14 +554,27 @@ final class AvatarTemplateController extends Controller
             // implicit tenant scope: that scope filters nothing under superadmin
             // bypass, so a bare superadmin used to deactivate the active
             // template of EVERY organization on this provider.
-            AvatarTemplate::where('organization_id', $template->organization_id)
+            $previous = AvatarTemplate::where('organization_id', $template->organization_id)
                 ->where('is_active', true)
                 ->where('provider', $template->provider)
                 ->whereKeyNot($template->id)
-                ->update(['is_active' => false]);
+                ->get();
+
+            AvatarTemplate::whereKey($previous->modelKeys())->update(['is_active' => false]);
 
             $template->update(['is_active' => true]);
+
+            return $previous;
         });
+
+        foreach ($replaced as $previous) {
+            app(AuditRecorder::class)->record(
+                'avatar_template.deactivated',
+                'avatar_template',
+                $previous->id,
+                before: ['name' => $previous->name, 'provider' => $previous->provider],
+            );
+        }
 
         // Which face every candidate meets is exactly the kind of change an
         // auditor asks about after the fact.
