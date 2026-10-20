@@ -6,6 +6,7 @@ namespace App\Http\Controllers;
 
 use App\Actions\AvatarTemplates\BindHeygenTemplateVoice;
 use App\Actions\ConversationLlm\ResyncTemplateBinding;
+use App\Exceptions\AvatarTemplateInUseException;
 use App\Http\Controllers\Concerns\ValidatesAvatarTemplateWrites;
 use App\Http\Resources\AvatarTemplateResource;
 use App\Models\AvatarTemplate;
@@ -622,6 +623,8 @@ final class AvatarTemplateController extends Controller
         return new AvatarTemplateResource($template->fresh());
     }
 
+    #[ResponseDoc(204, description: 'The template was deleted.', type: 'null')]
+    #[ResponseDoc(409, description: 'Still active (`template_active`) or pinned by projects (`template_in_use`, with counts).', type: "array{error: 'template_active'|'template_in_use', message: string, project_count?: int, organization_count?: int}")]
     public function destroy(int $id): JsonResponse
     {
         $template = AvatarTemplate::findOrFail($id);
@@ -646,11 +649,9 @@ final class AvatarTemplateController extends Controller
         $projectCount = Project::where('avatar_template_id', $template->id)->count();
 
         if ($projectCount > 0) {
-            return response()->json([
-                'error' => 'template_in_use',
-                'message' => 'template_in_use',
-                'project_count' => $projectCount,
-            ], Response::HTTP_CONFLICT);
+            // `findOrFail` never returns a platform row (SCOPE_EXCLUDE_PLATFORM_ROWS, also under bypass), and a
+            // project pins a template of its own organization, so every pin counted here is in ONE organization.
+            throw new AvatarTemplateInUseException($projectCount, 1);
         }
 
         // The model's `deleting` guard can still refuse: the audit row and the teardown follow a delete that succeeded.
