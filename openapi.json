@@ -2238,42 +2238,58 @@
                 ],
                 "responses": {
                     "204": {
-                        "description": "The template was deleted.",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "type": "null"
-                                }
-                            }
-                        }
+                        "description": "No content"
                     },
                     "409": {
-                        "description": "Still active (`template_active`) or pinned by projects (`template_in_use`, with counts).",
+                        "description": "Deleting what candidates are currently being interviewed with is\na decision, not a cleanup. 409 rather than 422: the request is\nwell-formed, the state is what refuses it.",
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "type": "object",
-                                    "properties": {
-                                        "error": {
-                                            "type": "string",
-                                            "enum": [
-                                                "template_active",
-                                                "template_in_use"
+                                    "anyOf": [
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "error": {
+                                                    "type": "string",
+                                                    "const": "template_in_use"
+                                                },
+                                                "message": {
+                                                    "type": "string",
+                                                    "const": "template_in_use"
+                                                },
+                                                "project_count": {
+                                                    "type": "integer",
+                                                    "description": "Live projects that pin the template."
+                                                },
+                                                "organization_count": {
+                                                    "type": "integer",
+                                                    "description": "Organizations those projects belong to: always 1 for an organization template, since a project can\npin only a template of its own organization or a platform template."
+                                                }
+                                            },
+                                            "required": [
+                                                "error",
+                                                "message",
+                                                "project_count",
+                                                "organization_count"
                                             ]
                                         },
-                                        "message": {
-                                            "type": "string"
-                                        },
-                                        "project_count": {
-                                            "type": "integer"
-                                        },
-                                        "organization_count": {
-                                            "type": "integer"
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "error": {
+                                                    "type": "string",
+                                                    "const": "template_active"
+                                                },
+                                                "message": {
+                                                    "type": "string",
+                                                    "const": "template_active"
+                                                }
+                                            },
+                                            "required": [
+                                                "error",
+                                                "message"
+                                            ]
                                         }
-                                    },
-                                    "required": [
-                                        "error",
-                                        "message"
                                     ]
                                 }
                             }
@@ -9585,14 +9601,7 @@
                 ],
                 "responses": {
                     "204": {
-                        "description": "The template was deleted.",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "type": "null"
-                                }
-                            }
-                        }
+                        "description": "No content"
                     },
                     "409": {
                         "description": "Still offered (`template_active`) or pinned by projects (`template_in_use`, with counts).",

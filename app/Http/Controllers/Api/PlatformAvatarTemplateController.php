@@ -353,7 +353,6 @@ final class PlatformAvatarTemplateController extends Controller
      *
      * @throws AuthorizationException
      */
-    #[ResponseDoc(204, description: 'The template was deleted.', type: 'null')]
     #[ResponseDoc(409, description: 'Still offered (`template_active`) or pinned by projects (`template_in_use`, with counts).', type: "array{error: 'template_active'|'template_in_use', message: string, project_count?: int, organization_count?: int}")]
     public function destroy(Request $request, int $id): JsonResponse
     {

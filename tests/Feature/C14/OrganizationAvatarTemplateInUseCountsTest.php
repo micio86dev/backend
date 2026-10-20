@@ -42,8 +42,14 @@ test('the organization delete refusal names the project and the organization cou
 test('the published delete conflict of both routes carries the same counts', function (): void {
     $spec = json_decode((string) file_get_contents(base_path('openapi.json')), true, flags: JSON_THROW_ON_ERROR);
 
-    $properties = fn (string $path): array => array_keys($spec['paths'][$path]['delete']['responses']['409']['content']['application/json']['schema']['properties']);
+    $schema = fn (string $path): array => $spec['paths'][$path]['delete']['responses']['409']['content']['application/json']['schema'];
 
-    expect($properties('/avatar-templates/{id}'))->toContain('project_count', 'organization_count')
-        ->and($properties('/avatar-templates/{id}'))->toEqualCanonicalizing($properties('/admin/avatar-templates/{id}'));
+    // The organization 409 is discriminated by `error`: its `template_in_use` variant carries the counts.
+    $inUse = array_values(array_filter(
+        $schema('/avatar-templates/{id}')['anyOf'],
+        fn (array $variant): bool => ($variant['properties']['error']['const'] ?? null) === 'template_in_use',
+    ));
+
+    expect($inUse)->toHaveCount(1)
+        ->and(array_keys($inUse[0]['properties']))->toEqualCanonicalizing(array_keys($schema('/admin/avatar-templates/{id}')['properties']));
 });

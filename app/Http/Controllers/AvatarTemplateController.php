@@ -623,8 +623,6 @@ final class AvatarTemplateController extends Controller
         return new AvatarTemplateResource($template->fresh());
     }
 
-    #[ResponseDoc(204, description: 'The template was deleted.', type: 'null')]
-    #[ResponseDoc(409, description: 'Still active (`template_active`) or pinned by projects (`template_in_use`, with counts).', type: "array{error: 'template_active'|'template_in_use', message: string, project_count?: int, organization_count?: int}")]
     public function destroy(int $id): JsonResponse
     {
         $template = AvatarTemplate::findOrFail($id);
@@ -648,10 +646,12 @@ final class AvatarTemplateController extends Controller
         // operator knows how much work reassigning it is before they start.
         $projectCount = Project::where('avatar_template_id', $template->id)->count();
 
+        // Returned, not thrown, so Scramble infers the exception's body and publishes it as its own 409 variant
+        // beside `template_active` (a thrown exception's body is not inferred). The organization count is 1:
+        // `findOrFail` never returns a platform row (SCOPE_EXCLUDE_PLATFORM_ROWS, also under bypass), and a
+        // project pins a template of its own organization.
         if ($projectCount > 0) {
-            // `findOrFail` never returns a platform row (SCOPE_EXCLUDE_PLATFORM_ROWS, also under bypass), and a
-            // project pins a template of its own organization, so every pin counted here is in ONE organization.
-            throw new AvatarTemplateInUseException($projectCount, 1);
+            return (new AvatarTemplateInUseException($projectCount, 1))->render();
         }
 
         // The model's `deleting` guard can still refuse: the audit row and the teardown follow a delete that succeeded.

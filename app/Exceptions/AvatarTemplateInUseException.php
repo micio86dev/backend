@@ -35,7 +35,18 @@ final class AvatarTemplateInUseException extends RuntimeException
         return response()->json([
             'error' => 'template_in_use',
             'message' => 'template_in_use',
+            /**
+             * Live projects that pin the template.
+             *
+             * @var int
+             */
             'project_count' => $this->projectCount,
+            /**
+             * Organizations those projects belong to: always 1 for an organization template, since a project can
+             * pin only a template of its own organization or a platform template.
+             *
+             * @var int
+             */
             'organization_count' => $this->organizationCount,
         ], Response::HTTP_CONFLICT);
     }
