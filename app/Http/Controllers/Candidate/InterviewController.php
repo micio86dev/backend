@@ -38,6 +38,8 @@ use App\Models\Project;
 use App\Services\Conversation\OpeningTextComposer;
 use App\Services\ConversationLlm\InterviewSessionLlmSnapshot;
 use App\Services\Provider\HeygenProvider;
+use App\Services\Provider\HrAvatarConnection;
+use App\Services\Provider\HrAvatarProvider;
 use App\Services\Provider\MockProvider;
 use App\Services\Provider\ProviderPreflight;
 use App\Services\Provider\ProviderSessionService;
@@ -118,7 +120,7 @@ class InterviewController extends Controller
      * interviewed, `429 provider_busy` means the provider is busy and the call can be retried, and `502`
      * means the provider failed.
      *
-     * @scramble-return array{session_id: int, provider: string, provider_token: string|null, conversation_url: string|null, audio_only: bool, question_context: array{competency_code: string, question_index: int, end_phrase: string, final_phrase: string, prompt_version: string|null, competency_ordinal: int|null, total_competencies: int|null}, interview_max_seconds: int, answer_min_seconds: int, answer_max_seconds: int, conversation_id?: string, conversation_ttl_seconds?: int, continuation?: array{conversation_id: string, competency_code: string}}
+     * @scramble-return array{session_id: int, provider: string, provider_token: string|null, conversation_url: string|null, audio_only: bool, question_context: array{competency_code: string, question_index: int, end_phrase: string, final_phrase: string, prompt_version: string|null, competency_ordinal: int|null, total_competencies: int|null}, interview_max_seconds: int, answer_min_seconds: int, answer_max_seconds: int, conversation_id?: string, conversation_ttl_seconds?: int, continuation?: array{conversation_id: string, competency_code: string}, hr_avatar?: array{base_url: string, publishable_key: string}}
      *
      * @throws \Throwable
      *
@@ -1708,7 +1710,16 @@ class InterviewController extends Controller
 
         $pinnedProvider = AvatarTemplate::availableToTenant()->whereKey($project->avatar_template_id)->value('provider');
 
-        return $pinnedProvider ?? $project->provider_override ?? config('interview.provider', 'heygen');
+        if ($pinnedProvider !== null) {
+            return $pinnedProvider;
+        }
+
+        // `hr_avatar` is reachable ONLY through a pinned template. As an override or an environment
+        // default it is ignored as if absent, so neither can silently select it.
+        $override = $project->provider_override === HrAvatarConnection::PROVIDER ? null : $project->provider_override;
+        $default = config('interview.provider', 'heygen');
+
+        return $override ?? ($default === HrAvatarConnection::PROVIDER ? 'heygen' : $default);
     }
 
     /**
@@ -1933,6 +1944,8 @@ class InterviewController extends Controller
         return match ($providerName) {
             'tavus' => app(TavusProvider::class),
             'mock' => app(MockProvider::class),
+            // Explicit, so a `conv_...` ref can never reach the HeyGen default below.
+            HrAvatarConnection::PROVIDER => app(HrAvatarProvider::class),
             default => app(HeygenProvider::class),
         };
     }

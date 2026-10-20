@@ -28,6 +28,15 @@ final class ConfigValidator
      */
     public static function validate(string $provider, array $config, bool $superadmin = false): array
     {
+        // `hr_avatar` takes no provider knobs: the avatar's settings live in HR-Avatar, so every key is
+        // unknown. Handled before the empty-spec early return below, which would accept anything.
+        if ($provider === 'hr_avatar') {
+            return array_map(
+                static fn (int|string $key): array => ['key' => (string) $key, 'code' => 'unknown'],
+                array_keys($config),
+            );
+        }
+
         $fields = ProviderFieldSpecs::for($provider);
 
         if ($fields === []) {

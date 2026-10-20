@@ -19,7 +19,8 @@ use Illuminate\Support\Facades\DB;
  * invariants) therefore run on every copy.
  *
  * What is copied: name, description, provider, config, persona, the answer time range and the
- * model/credential binding (credentials are platform rows). What is NOT:
+ * model/credential binding (credentials are platform rows) and the HR-Avatar config id (an opaque id into the
+ * shared HR-Avatar account, like the provider-side ids already inside `config`). What is NOT:
  * `is_active` (a copy is inactive), and everything that belongs to the SOURCE's
  * provider-side resources (`heygen_llm_configuration_id`, `llm_sync_status`,
  * `llm_synced_at`) — the copy has its own lifecycle and syncs on its own.
@@ -64,6 +65,7 @@ final class DuplicateAvatarTemplate
                         'is_active' => false,
                         'llm_model_id' => $source->llm_model_id,
                         'llm_credential_id' => $source->llm_credential_id,
+                        'hr_avatar_config_id' => $source->hr_avatar_config_id,
                     ]);
 
                     return ['organization_id' => $targetId, 'id' => $copy->id, 'name' => $copy->name];

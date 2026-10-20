@@ -54,6 +54,7 @@ use Illuminate\Support\Carbon;
  * @property int $answer_max_seconds
  * @property int|null $llm_model_id
  * @property int|null $llm_credential_id
+ * @property string|null $hr_avatar_config_id Opaque HR-Avatar `avc_...` id; NULL unless the template runs on HR-Avatar
  * @property string|null $heygen_llm_configuration_id
  * @property string|null $llm_sync_status
  * @property Carbon|null $llm_synced_at
@@ -99,6 +100,7 @@ class AvatarTemplate extends TenantModel implements AdmitsPlatformRows
         // I3/I4 guards below (pluggable-conversation-llm PR P3a, design D4).
         'llm_model_id',
         'llm_credential_id',
+        'hr_avatar_config_id',
     ];
 
     /** @return array<string, string> */
@@ -189,97 +191,115 @@ class AvatarTemplate extends TenantModel implements AdmitsPlatformRows
             }
         });
 
-        static::deleted(function (self $template): void {
-            if ($template->isForceDeleting()) {
-                return;
-            }
+        static::deleted(static fn (self $template) => self::unbindAfterSoftDelete($template));
 
-            // A soft-deleted template keeps its ROW, and its row keeps its
-            // `llm_credential_id` — which `llm_credentials` references with
-            // ON DELETE RESTRICT. The credential-deletion guard counts BOUND
-            // templates to decide whether removing a credential is safe, and
-            // that count applies the soft-delete scope while the foreign key
-            // does not. The two disagreed: the guard saw nothing, allowed the
-            // delete, and Postgres refused it as an unhandled 500.
-            //
-            // The binding is torn down at the provider before the template is
-            // deleted (HeygenLlmRegistrar::forget), so it is already dead by
-            // the time we get here — nulling it makes the row agree with
-            // reality rather than inventing a new rule. Both columns go
-            // together because I1's CHECK constraint refuses a half-bound row.
-            //
-            // Written through the query builder deliberately: `runSoftDelete`
-            // updates ONLY `deleted_at`, so dirty attributes set in a
-            // `deleting` hook are silently dropped, and this has to happen
-            // after the row is already marked deleted.
-            static::withoutGlobalScopes()
-                ->whereKey($template->getKey())
-                ->update(['llm_model_id' => null, 'llm_credential_id' => null]);
+        static::saving(fn (self $template) => $template->assertLlmBindingValid());
+    }
 
-            $template->llm_model_id = null;
-            $template->llm_credential_id = null;
-            $template->syncOriginalAttributes(['llm_model_id', 'llm_credential_id']);
-        });
+    /**
+     * A soft-deleted template keeps its ROW, and its row keeps its
+     * `llm_credential_id` — which `llm_credentials` references with
+     * ON DELETE RESTRICT. The credential-deletion guard counts BOUND
+     * templates to decide whether removing a credential is safe, and
+     * that count applies the soft-delete scope while the foreign key
+     * does not. The two disagreed: the guard saw nothing, allowed the
+     * delete, and Postgres refused it as an unhandled 500.
+     *
+     * The binding is torn down at the provider before the template is
+     * deleted (HeygenLlmRegistrar::forget), so it is already dead by
+     * the time we get here — nulling it makes the row agree with
+     * reality rather than inventing a new rule. Both columns go
+     * together because I1's CHECK constraint refuses a half-bound row.
+     *
+     * Written through the query builder deliberately: `runSoftDelete`
+     * updates ONLY `deleted_at`, so dirty attributes set in a
+     * `deleting` hook are silently dropped, and this has to happen
+     * after the row is already marked deleted.
+     *
+     * Strips no Eloquent global scope: it updates through the base query builder, keyed on the primary key of
+     * the instance the caller already resolved. That is tenant-safe because the key comes from a model that was
+     * loaded through the tenant-scoped query (or written under the platform context that
+     * `PlatformTemplateContext` guards), so the update can touch only that one row. It must not depend on the
+     * ambient tenant context: the delete can run in a context that does not own the row (a platform template
+     * deleted under an organization context, a template deleted with no context at all), and a scoped update
+     * would match zero rows and bring the credential foreign key refusal back. Pinned by
+     * tests/Feature/C14/AvatarTemplateDeletedHookScopeTest.php and
+     * tests/Arch/ConversationLlm/AvatarTemplateModelScopeStripArchTest.php.
+     */
+    private static function unbindAfterSoftDelete(self $template): void
+    {
+        if ($template->isForceDeleting()) {
+            return;
+        }
 
-        static::saving(function (self $template): void {
-            // Unbound is always legal; I1's CHECK handles the half-bound
-            // case at the database. Nothing to check here.
-            if ($template->llm_model_id === null && $template->llm_credential_id === null) {
-                return;
-            }
+        $template->getConnection()->table($template->getTable())
+            ->where($template->getKeyName(), $template->getKey())
+            ->update(['llm_model_id' => null, 'llm_credential_id' => null]);
 
-            $model = LlmModel::find($template->llm_model_id);
+        $template->llm_model_id = null;
+        $template->llm_credential_id = null;
+        $template->syncOriginalAttributes(['llm_model_id', 'llm_credential_id']);
+    }
 
-            if ($model === null) {
-                throw new InvalidLlmBindingException('llm_model_id', 'model_not_found');
-            }
+    /**
+     * The binding invariants, checked on the CURRENT attribute values.
+     *
+     * Run by the `saving` hook for every write path, and by the template
+     * controllers BEFORE they bind an external HeyGen voice: that bind is an
+     * irreversible side effect, so every refusal this hook can raise on the
+     * values it is given is raised before it. Throws the same exceptions
+     * either way, so a 422 body does not depend on which of the two raised it.
+     *
+     * Not a guarantee against a race: the model and credential are read here
+     * and again by the `saving` hook, so a model withdrawn or a credential
+     * removed in between can still make the hook refuse after the bind. That
+     * window is accepted; closing it would need a lock across the bind, which
+     * a rare concurrent admin edit does not justify.
+     *
+     * I5 (a withdrawn model cannot be NEWLY bound) is gated on `isDirty('llm_model_id')` on purpose: a template
+     * already bound to a model that later becomes unavailable must keep saving unrelated changes, which is the
+     * point of "mark unavailable, never delete" (design D1). I3 only requires the credential to EXIST, since
+     * credentials are platform rows (ratified 2026-09-14); its `credential_not_found` code is a published 422
+     * body and stays verbatim.
+     *
+     * @throws InvalidLlmBindingException
+     * @throws UnsupportedLlmModeException
+     */
+    public function assertLlmBindingValid(): void
+    {
+        // Both null is unbound, always legal. A half-bound row falls through and is refused below
+        // (the missing side fails its lookup); I1's CHECK is the database backstop for writes that skip this hook.
+        if ($this->llm_model_id === null && $this->llm_credential_id === null) {
+            return;
+        }
 
-            // I5 — a withdrawn (`is_available = false`) model cannot be
-            // NEWLY bound. Gated on `isDirty('llm_model_id')` deliberately:
-            // a template already bound to a model that later becomes
-            // unavailable MUST keep saving for unrelated field changes
-            // (renaming it, changing its voice settings) — that is the
-            // entire point of "mark unavailable, never delete" (design D1).
-            // Rejecting every unrelated edit to a grandfathered template
-            // would be a worse bug than the one this guard fixes.
-            if ($template->isDirty('llm_model_id') && ! $model->is_available) {
-                throw new InvalidLlmBindingException('llm_model_id', 'model_unavailable');
-            }
+        $model = LlmModel::find($this->llm_model_id);
 
-            // I2 — native_duplex is refused at every write path.
-            if ($model->capability->mode() !== LlmMode::Managed) {
-                throw new UnsupportedLlmModeException('llm_model_id');
-            }
+        if ($model === null) {
+            throw new InvalidLlmBindingException('llm_model_id', 'model_not_found');
+        }
 
-            // I3 — the credential must EXIST. It no longer has to belong to
-            // anyone: credentials became platform rows (RATIFIED 2026-09-14),
-            // so the ownership half of this guard was refusing the only
-            // arrangement the product now has.
-            //
-            // What went with it, and why none of it is a loss:
-            //   - the `$ownerOrgId` derivation, including the `saving`-fires-
-            //     before-`creating` gotcha it existed to dodge — nothing
-            //     compares against an owning org any more;
-            //   - the `MissingTenantContextException` on a null org, which was
-            //     protecting that comparison and not the binding;
-            //   - `withoutGlobalScopes()`, which defeated a tenant scope
-            //     `LlmCredential` no longer carries.
-            //
-            // The existence-oracle concern that shaped the original message is
-            // also moot — there is one visible set of credentials now, so "no
-            // such credential" leaks nothing about anybody else. The code is
-            // kept verbatim because it is a published 422 body.
-            $credential = LlmCredential::find($template->llm_credential_id);
+        // I5 — see the method docblock.
+        if ($this->isDirty('llm_model_id') && ! $model->is_available) {
+            throw new InvalidLlmBindingException('llm_model_id', 'model_unavailable');
+        }
 
-            if ($credential === null) {
-                throw new InvalidLlmBindingException('llm_credential_id', 'credential_not_found');
-            }
+        // I2 — native_duplex is refused at every write path.
+        if ($model->capability->mode() !== LlmMode::Managed) {
+            throw new UnsupportedLlmModeException('llm_model_id');
+        }
 
-            // I4 — the credential's vendor must match the model's vendor.
-            if ($credential->vendor !== $model->vendor) {
-                throw new InvalidLlmBindingException('llm_credential_id', 'vendor_mismatch');
-            }
-        });
+        // I3 — see the method docblock.
+        $credential = LlmCredential::find($this->llm_credential_id);
+
+        if ($credential === null) {
+            throw new InvalidLlmBindingException('llm_credential_id', 'credential_not_found');
+        }
+
+        // I4 — the credential's vendor must match the model's vendor.
+        if ($credential->vendor !== $model->vendor) {
+            throw new InvalidLlmBindingException('llm_credential_id', 'vendor_mismatch');
+        }
     }
 
     /** @return BelongsTo<LlmModel, $this> */
@@ -302,6 +322,10 @@ class AvatarTemplate extends TenantModel implements AdmitsPlatformRows
      * there is nothing to pass wrongly. With no context at all it FAILS
      * CLOSED: `organization_id = NULL OR organization_id IS NULL` would hand
      * every platform row to a caller that established no tenant.
+     *
+     * Under the superadmin bypass (`TenantResolver::isBypass()`) it applies no
+     * organization filter at all: every organization's rows and every platform
+     * row are returned, which is the bypass's purpose (the platform routes).
      *
      * NOTE: `has()` / `whereHas()` on a relation using this scope merge the
      * removed scopes back in; no such call exists today.

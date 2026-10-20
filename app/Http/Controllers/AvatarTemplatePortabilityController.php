@@ -10,12 +10,14 @@ use App\Models\AvatarTemplate;
 use App\Models\LlmCredential;
 use App\Models\LlmModel;
 use App\Rules\PersonaDisplayName;
+use App\Services\Provider\HrAvatarConnection;
 use App\Support\AvatarTemplates\ConfigValidator;
-use App\Support\AvatarTemplates\ProviderFieldSpecs;
 use App\Support\AvatarTemplates\TemplateDocument;
 use App\Support\Tenancy\TenantResolver;
+use Dedoc\Scramble\Attributes\Response as ResponseDoc;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -37,9 +39,14 @@ final class AvatarTemplatePortabilityController extends Controller
         private readonly TenantResolver $resolver,
     ) {}
 
+    // Internal note, not published (Scramble exports docblock prose as public text): the response shape is
+    // stated here because Scramble reads a conditionally added array member as required, and
+    // `hr_avatar_config_id` is emitted only for a template that has one (see `TemplateDocument::export()`).
+    // `config` and `persona` stay `array<mixed>` so their published schema lines are exactly what inference gave.
     /**
      * GET /api/avatar-templates/export
      */
+    #[ResponseDoc(200, type: 'array{schema: "'.TemplateDocument::SCHEMA.'", exported_at: string, templates: list<array{name: string, description: string|null, provider: string, config: array<mixed>, persona: array<mixed>|null, answer_min_seconds: int, answer_max_seconds: int, llm: array{model_key: string, credential_name: string}|null, hr_avatar_config_id?: string}>}')]
     public function export(): JsonResponse
     {
         $this->authorize('create', AvatarTemplate::class);
@@ -91,7 +98,7 @@ final class AvatarTemplatePortabilityController extends Controller
                 $problem = $this->reject($record);
 
                 if ($problem !== null) {
-                    $errors["templates.{$index}"] = [$problem];
+                    $errors["templates.{$index}"][] = $problem;
 
                     continue;
                 }
@@ -107,13 +114,14 @@ final class AvatarTemplatePortabilityController extends Controller
             ], 422);
         }
 
-        $created = array_map(fn (array $record): array => $this->create($record), $records);
+        // One transaction: a save can still refuse a record (I2/I3/I4), and the earlier ones must not stay.
+        $created = DB::transaction(fn (): array => array_map(fn (array $record): array => $this->create($record), $records));
 
         return response()->json(['data' => $created], 201);
     }
 
     /**
-     * @param  array{name: string, provider: string, config: array<string, mixed>, persona: array<string, mixed>|null, answer_min_seconds: mixed, answer_max_seconds: mixed, description: string|null}  $record
+     * @param  array{name: string, provider: string, config: array<mixed>, persona: array<mixed>|null, answer_min_seconds: mixed, answer_max_seconds: mixed, description: string|null, llm?: array{model_key: string, credential_name: string}|null, hr_avatar_config_id?: mixed}  $record
      */
     private function reject(array $record): ?string
     {
@@ -121,8 +129,19 @@ final class AvatarTemplatePortabilityController extends Controller
             return 'A template needs a name.';
         }
 
-        if (ProviderFieldSpecs::for($record['provider']) === []) {
+        // `hr_avatar` is a provider only while HR-Avatar is available, exactly like on create: otherwise it is
+        // as unknown as any other name. (This used to be "has a field spec", which `hr_avatar` never has.)
+        $knownProvider = in_array($record['provider'], ['heygen', 'tavus'], true)
+            || ($record['provider'] === HrAvatarConnection::PROVIDER && HrAvatarConnection::isAvailable());
+
+        if (! $knownProvider) {
             return "Unknown provider '{$record['provider']}'.";
+        }
+
+        $hrAvatarProblem = $this->hrAvatarProblem($record);
+
+        if ($hrAvatarProblem !== null) {
+            return $hrAvatarProblem;
         }
 
         // The SAME bounds the form applies. A file without the range (an older export) was given the
@@ -172,7 +191,7 @@ final class AvatarTemplatePortabilityController extends Controller
         // messages are flattened into one sentence the operator can act on.
         $flat = [];
 
-        array_walk_recursive($failures, function ($message) use (&$flat): void {
+        array_walk_recursive($failures, function (mixed $message) use (&$flat): void {
             $flat[] = (string) $message;
         });
 
@@ -180,7 +199,32 @@ final class AvatarTemplatePortabilityController extends Controller
     }
 
     /**
-     * @param  array{name: string, provider: string, config: array<string, mixed>, persona: array<string, mixed>|null, answer_min_seconds: mixed, answer_max_seconds: mixed, description: string|null, llm: array{model_key: string, credential_name: string}|null}  $record
+     * The HR-Avatar config id of an entry: the SAME format the form applies whenever one is present, required
+     * for an `hr_avatar` template, which also takes no language model binding (its conversation runs inside
+     * HR-Avatar). Config knobs are refused further down by the ordinary config validator.
+     *
+     * @param  array{provider: string, llm?: array{model_key: string, credential_name: string}|null, hr_avatar_config_id?: mixed}  $record
+     */
+    private function hrAvatarProblem(array $record): ?string
+    {
+        $id = $record['hr_avatar_config_id'] ?? null;
+        $isHrAvatar = $record['provider'] === HrAvatarConnection::PROVIDER;
+
+        if ($id === null) {
+            return $isHrAvatar ? 'hr_avatar_config_id: an hr_avatar template needs one.' : null;
+        }
+
+        if (! HrAvatarConnection::isConfigId($id)) {
+            return 'hr_avatar_config_id: an avc_ id of at most 64 characters is expected.';
+        }
+
+        return $isHrAvatar && ($record['llm'] ?? null) !== null
+            ? 'llm: an hr_avatar template takes no language model binding.'
+            : null;
+    }
+
+    /**
+     * @param  array{name: string, provider: string, config: array<mixed>, persona: array<mixed>|null, answer_min_seconds: mixed, answer_max_seconds: mixed, description: string|null, llm: array{model_key: string, credential_name: string}|null, hr_avatar_config_id?: mixed}  $record
      * @return array<string, mixed>
      */
     private function create(array $record): array
@@ -213,6 +257,8 @@ final class AvatarTemplatePortabilityController extends Controller
             'is_active' => false,
             'llm_model_id' => $llmIds['llm_model_id'],
             'llm_credential_id' => $llmIds['llm_credential_id'],
+            // Validated by `reject()` before this runs: a string in the `avc_` format, or null.
+            'hr_avatar_config_id' => $record['hr_avatar_config_id'] ?? null,
         ]);
         // I2/I3/I4 still run on THIS save() (design D4/D13) — a mode or
         // vendor mismatch is a 422 via the exception's own render(), not a
@@ -246,8 +292,7 @@ final class AvatarTemplatePortabilityController extends Controller
 
         // Global registry — not tenant-scoped (design D1).
         $model = LlmModel::where('key', $llm['model_key'])->first();
-        // Tenant-scoped to the CURRENT (importing) organization via the
-        // TenantScoped global scope — never the exporting org's row.
+        // Also a platform row (credentials are global since 2026-09-14), looked up by its platform-unique name.
         $credential = LlmCredential::where('name', $llm['credential_name'])->first();
 
         $warnings = [];

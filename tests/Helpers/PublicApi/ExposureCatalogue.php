@@ -254,6 +254,31 @@ final class ExposureCatalogue
     }
 
     /**
+     * Keys that exist ONLY when a value exists (hr-avatar-adapter D-EXPOSE): admin surfaces, plus the candidate's
+     * own `/start` response (never the public API). The fixtures behind
+     * `exclusions()` (a null id, a non-`hr_avatar` start) cannot see them. Each entry is the key set a surface
+     * GAINS when the value is present; `HrAvatarExposureTest` proves the gain equals the list and that none of
+     * it is public. A separate section, not new `exclusions()` entries: those compare exact sets on fixtures
+     * where these keys are absent, so adding them there would break an existing, correct test.
+     *
+     * @return array<string, list<string>>
+     */
+    public static function conditionalExclusions(): array
+    {
+        return [
+            // Admin resource, present only once an id is set (the export command, or an `hr_avatar` template).
+            'AvatarTemplate' => ['hr_avatar_config_id'],
+            // Inherited by the superadmin platform resource; never set in practice (a platform template can
+            // never be `hr_avatar` and the export command skips platform rows).
+            'PlatformAvatarTemplate' => ['hr_avatar_config_id'],
+            // The admin export document: one optional member per template, present only once an id exists.
+            'AvatarTemplateExport' => ['templates[].hr_avatar_config_id'],
+            // The candidate's own /start response for an `hr_avatar` session: the join inputs of the browser SDK.
+            'InterviewStart' => ['hr_avatar.base_url', 'hr_avatar.publishable_key'],
+        ];
+    }
+
+    /**
      * @return array<string, list<string>>
      */
     public static function additions(): array

@@ -34,6 +34,25 @@ use Throwable;
  */
 final class TavusPalSync
 {
+    /**
+     * The closed sets this class answers with, for the OpenAPI document. A PHPDoc shape cannot read an array, so the
+     * `@scramble-return` of `AvatarTemplateResource` and `PlatformAvatarTemplateResource` spells them as literal
+     * unions; `AvatarTemplateClosedSetsDocumentedTest` pins the arrays to what `sync()` really returns and to the
+     * published `enum`s.
+     */
+    public const STATUSES = ['skipped', 'synced', 'warning'];
+
+    public const CODES = [
+        'tavus_key_missing',
+        'pal_id_missing',
+        'pal_not_editable',
+        'pal_sync_rejected',
+        'pal_sync_unauthorized',
+        'pal_not_found',
+        'pal_sync_failed',
+        'pal_sync_unreachable',
+    ];
+
     private const BASE_URL = 'https://tavusapi.com/v2/pals';
 
     /** Bounded so a slow provider cannot hold an admin request open. */

@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Actions\AvatarTemplates\BindHeygenTemplateVoice;
 use App\Actions\AvatarTemplates\DuplicateAvatarTemplate;
+use App\Actions\ConversationLlm\ResyncTemplateBinding;
 use App\Exceptions\AvatarTemplateInUseException;
 use App\Http\Controllers\Concerns\ValidatesAvatarTemplateWrites;
 use App\Http\Controllers\Controller;
@@ -112,7 +113,7 @@ final class PlatformAvatarTemplateController extends Controller
     {
         abort_unless($this->isSuperadmin($request), Response::HTTP_FORBIDDEN);
 
-        $templates = AvatarTemplate::platformOnly()->orderByDesc('is_active')->orderBy('name')->get();
+        $templates = AvatarTemplate::platformOnly()->with('llmModel')->orderByDesc('is_active')->orderBy('name')->get();
         $usage = $this->usage->for(array_values(array_map(intval(...), $templates->modelKeys())));
 
         return new AnonymousResourceCollection(
@@ -142,6 +143,7 @@ final class PlatformAvatarTemplateController extends Controller
      *
      * @throws AuthorizationException
      */
+    #[ResponseDoc(201, type: 'array{data: \\App\\Http\\Resources\\PlatformAvatarTemplateResource, warning?: '.ResyncTemplateBinding::WARNING_UNION.'}')]
     public function store(Request $request): JsonResponse
     {
         abort_unless($this->isSuperadmin($request), Response::HTTP_FORBIDDEN);
@@ -155,8 +157,10 @@ final class PlatformAvatarTemplateController extends Controller
         $this->assertAnswerRangeOrdered($validated);
 
         $this->assertConfigValid($validated['provider'], $validated['config']);
-        app(BindHeygenTemplateVoice::class)->run($validated['provider'], $validated['config']);
         $this->assertNameFreeAmong(AvatarTemplate::platformOnly(), $validated['name'], null);
+        // The binding is a validation too: the `saving` hook would raise it only after the bind, which is not undoable.
+        (new AvatarTemplate($validated))->assertLlmBindingValid();
+        app(BindHeygenTemplateVoice::class)->run($validated['provider'], $validated['config']);
 
         $template = $this->answeringPlatformNameRace(fn (): AvatarTemplate => $this->context->run($actor, fn (): AvatarTemplate => DB::transaction(function () use ($validated, $actor): AvatarTemplate {
             $template = AvatarTemplate::create($validated);
@@ -169,6 +173,11 @@ final class PlatformAvatarTemplateController extends Controller
                 null,
                 ['name' => $template->name, 'provider' => $template->provider, 'scope' => 'platform'],
             );
+
+            // Bound at creation: audited like the same binding made by an edit.
+            if ($template->llm_model_id !== null || $template->llm_credential_id !== null) {
+                $this->audit->record($actor->id, 'avatar_template.llm_bound', 'avatar_template', $template->id, null, $this->bindingNames($template->refresh()));
+            }
 
             return $template;
         })));
@@ -188,6 +197,7 @@ final class PlatformAvatarTemplateController extends Controller
      *
      * @throws AuthorizationException
      */
+    #[ResponseDoc(200, type: 'array{data: \\App\\Http\\Resources\\PlatformAvatarTemplateResource, warning?: '.ResyncTemplateBinding::WARNING_UNION.'}')]
     public function update(Request $request, int $id): PlatformAvatarTemplateResource
     {
         abort_unless($this->isSuperadmin($request), Response::HTTP_FORBIDDEN);
@@ -206,17 +216,23 @@ final class PlatformAvatarTemplateController extends Controller
         // fall back to the environment defaults.
         if ($request->has('provider') && $request->input('provider') !== $template->provider) {
             throw ValidationException::withMessages([
-                'provider' => 'The provider cannot be changed after creation. Create a new template instead.',
+                'provider' => __('messages.avatar_templates.provider_immutable'),
             ]);
         }
 
         if (array_key_exists('config', $validated)) {
             $this->assertConfigValid($template->provider, $validated['config']);
-            app(BindHeygenTemplateVoice::class)->run($template->provider, $validated['config']);
         }
 
         if (array_key_exists('name', $validated)) {
             $this->assertNameFreeAmong(AvatarTemplate::platformOnly(), $validated['name'], $template->id);
+        }
+
+        // On a copy: the original is read below for the audit trail. The `saving` hook would raise this only after the bind.
+        (clone $template)->fill($validated)->assertLlmBindingValid();
+
+        if (array_key_exists('config', $validated)) {
+            app(BindHeygenTemplateVoice::class)->run($template->provider, $validated['config']);
         }
 
         $before = ['name' => $template->name];
@@ -337,8 +353,7 @@ final class PlatformAvatarTemplateController extends Controller
      *
      * @throws AuthorizationException
      */
-    #[ResponseDoc(204, description: 'The template was deleted.', type: 'null')]
-    #[ResponseDoc(409, description: 'Still offered (`template_active`) or pinned by projects (`template_in_use`, with counts).', type: "array{error: 'template_active'|'template_in_use', message: string, project_count?: int, organization_count?: int}")]
+    #[ResponseDoc(409, description: 'Still offered (`template_active`) or pinned by projects (`template_in_use`, with counts).', type: "array{error: 'template_active'|'template_in_use', message: 'template_active'|'template_in_use', project_count?: int, organization_count?: int}")]
     public function destroy(Request $request, int $id): JsonResponse
     {
         abort_unless($this->isSuperadmin($request), Response::HTTP_FORBIDDEN);
@@ -358,12 +373,6 @@ final class PlatformAvatarTemplateController extends Controller
             throw new AvatarTemplateInUseException($usage['project_count'], $usage['organization_count']);
         }
 
-        if ($template->provider === 'heygen') {
-            // Never throws (design D8): deleting OUR row must not be blocked by
-            // an unreachable HeyGen account.
-            app(HeygenLlmRegistrar::class)->forget($template);
-        }
-
         $this->context->run($actor, fn () => DB::transaction(function () use ($actor, $template): void {
             $this->audit->record(
                 $actor->id,
@@ -376,6 +385,13 @@ final class PlatformAvatarTemplateController extends Controller
 
             $template->delete();
         }));
+
+        // The model's `deleting` guard can still refuse: the teardown follows a delete that succeeded.
+        if ($template->provider === 'heygen') {
+            // Never throws (design D8): deleting OUR row must not be blocked by
+            // an unreachable HeyGen account.
+            app(HeygenLlmRegistrar::class)->forget($template);
+        }
 
         return response()->json(null, Response::HTTP_NO_CONTENT);
     }

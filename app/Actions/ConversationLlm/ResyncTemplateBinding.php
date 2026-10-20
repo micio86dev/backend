@@ -31,6 +31,16 @@ use App\Support\AvatarTemplates\TavusPalSync;
 final class ResyncTemplateBinding
 {
     /**
+     * Every code the `warning` of a template write response can carry: the Tavus persona sync's and the HeyGen
+     * LLM configuration's. `WARNING_UNION` is the same set as a literal union, for `#[ResponseDoc]` (a PHPDoc
+     * shape cannot read an array); `AvatarTemplateWarningDocumentedTest` pins the two together and to the published
+     * `enum`.
+     */
+    public const WARNING_CODES = [...TavusPalSync::CODES, ...HeygenLlmRegistrar::WARNING_CODES];
+
+    public const WARNING_UNION = "'tavus_key_missing'|'pal_id_missing'|'pal_not_editable'|'pal_sync_rejected'|'pal_sync_unauthorized'|'pal_not_found'|'pal_sync_failed'|'pal_sync_unreachable'|'llm_provider_unreachable'|'llm_credential_missing'|'llm_secret_failed'|'llm_config_failed'";
+
+    /**
      * @return array{status: 'skipped'|'synced'|'warning', message?: string}
      */
     public function run(AvatarTemplate $template): array

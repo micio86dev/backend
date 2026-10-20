@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Support\AvatarTemplates;
 
+use App\Services\Provider\HrAvatarConnection;
 use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -87,12 +89,50 @@ final class AvatarProviderCatalogue
      */
     public const CACHE_VERSION = 3;
 
+    /**
+     * The `entry()` shape as a PHPDoc type, for `#[Response]` on the route that returns the catalogue. Scramble
+     * cannot infer it through the helper-built arrays and would document `items` as an untyped list. `editable`
+     * is the one optional member (a Tavus persona only); `italian` is `native`, `multilingual` or null (literal union below; `ITALIAN_VALUES` is pinned to it by test).
+     */
+    public const ITEM_DOC_SHAPE = "array{id: string, provider: string, label: string, name: string, language: string|null, locale: string|null, accent: string|null, italian: 'native'|'multilingual'|null, preview_image_url: string|null, preview_audio_url: string|null, preview_audio_via_api: bool, preview_video_url: string|null, editable?: bool|null}";
+
+    /**
+     * The closed sets a catalogue answer is made of, for the OpenAPI document (`*_UNION` is the same set as a
+     * literal union, since a PHPDoc shape cannot read an array). `AvatarTemplateClosedSetsDocumentedTest` pins
+     * the arrays to what `fetch()` really returns and to the published `enum`s. `ERROR_CODES` are the codes of a
+     * `provider_error` status; `ITALIAN_VALUES` are the non-null values of an item's `italian`.
+     */
+    public const STATUSES = ['ok', 'empty', 'provider_error'];
+
+    public const STATUS_UNION = "'ok'|'empty'|'provider_error'";
+
+    public const ERROR_CODES = [
+        'provider_key_missing',
+        'provider_unauthorized',
+        'provider_rate_limited',
+        'provider_unavailable',
+        'provider_unreachable',
+        'provider_rejected',
+        'provider_bad_response',
+        'unsupported_catalogue',
+    ];
+
+    public const ERROR_CODE_UNION = "'provider_key_missing'|'provider_unauthorized'|'provider_rate_limited'|'provider_unavailable'|'provider_unreachable'|'provider_rejected'|'provider_bad_response'|'unsupported_catalogue'";
+
+    public const ITALIAN_VALUES = ['native', 'multilingual'];
+
     private const PAGE_SIZE = 100;
 
     private const TIMEOUT_SECONDS = 15;
 
     /** Safety bound on pagination so a misbehaving vendor cannot loop us. */
     private const MAX_PAGES = 20;
+
+    /** An organization-scoped result is short-lived: a config created in HR-Avatar must show up soon. */
+    private const ORGANIZATION_TTL_MINUTES = 5;
+
+    /** One organization's configs only, so far fewer pages than a whole vendor inventory. */
+    private const HR_AVATAR_MAX_PAGES = 10;
 
     /**
      * `status` is one of:
@@ -109,14 +149,24 @@ final class AvatarProviderCatalogue
      *                       `provider_bad_response`, `unsupported_catalogue`.
      *                       Never cached either.
      *
+     * An `hr_avatar` request without an organization (a bare superadmin has none to list) answers `empty` and
+     * requests and caches nothing. `$fresh` skips the 24h cache for one call: a just-created avatar or voice
+     * must not be refused for a day because the list predates it. A provider failure is never cached (D3): the
+     * next call retries, and only the safe code and the exception CLASS are logged, never a message, because
+     * some exception types echo response content that could carry the provider's own error body. A truncated
+     * list (page cap hit, or a secondary list failed) is served, but never cached as if it were the whole
+     * inventory.
+     *
      * @return array{status: string, items: list<array<string, mixed>>, code?: string}
      */
-    public static function fetch(string $provider, string $resource, bool $fresh = false): array
+    public static function fetch(string $provider, string $resource, bool $fresh = false, ?int $organizationId = null): array
     {
-        $cacheKey = self::cacheKey($provider, $resource);
+        if ($provider === HrAvatarConnection::PROVIDER && $organizationId === null) {
+            return ['status' => 'empty', 'items' => []];
+        }
 
-        // `$fresh` skips the 24h cache for one call: a just-created avatar or
-        // voice must not be refused for a day because the list predates it.
+        $cacheKey = self::cacheKey($provider, $resource, $organizationId);
+
         if ($fresh) {
             Cache::forget($cacheKey);
         }
@@ -129,13 +179,8 @@ final class AvatarProviderCatalogue
         }
 
         try {
-            $items = self::fetchLive($provider, $resource);
+            $live = self::fetchLive($provider, $resource, $organizationId);
         } catch (CatalogueFetchException $e) {
-            // D3: a provider failure is NEVER cached — the next call retries
-            // rather than replaying a stale failure. Only the safe code and the
-            // exception CLASS are logged, never a message: some exception types
-            // echo response content, which could carry the provider's own
-            // error body.
             Log::warning('AvatarProviderCatalogue: provider fetch failed', [
                 'provider' => $provider,
                 'resource' => $resource,
@@ -154,31 +199,37 @@ final class AvatarProviderCatalogue
             return ['status' => 'provider_error', 'items' => [], 'code' => 'provider_bad_response'];
         }
 
-        if ($items === []) {
+        if ($live->rows === []) {
             return ['status' => 'empty', 'items' => []];
         }
 
-        $result = ['status' => 'ok', 'items' => $items];
-        Cache::put($cacheKey, $result, now()->addDay());
+        $result = ['status' => 'ok', 'items' => $live->rows];
+
+        if ($live->truncated) {
+            return $result;
+        }
+
+        Cache::put($cacheKey, $result, $organizationId === null ? now()->addDay() : now()->addMinutes(self::ORGANIZATION_TTL_MINUTES));
 
         return $result;
     }
 
-    /** The one place a catalogue cache key is built. */
-    public static function cacheKey(string $provider, string $resource): string
+    /**
+     * The one place a catalogue cache key is built. An organization-scoped catalogue (HR-Avatar configs) adds
+     * `:org{id}`; every other key is the string it always was.
+     */
+    public static function cacheKey(string $provider, string $resource, ?int $organizationId = null): string
     {
-        return 'avatar-catalogue:v'.self::CACHE_VERSION.":{$provider}:{$resource}";
+        return 'avatar-catalogue:v'.self::CACHE_VERSION.":{$provider}:{$resource}".($organizationId === null ? '' : ":org{$organizationId}");
     }
 
     /**
-     * @return list<array<string, mixed>>
+     * The HTTP surface (`AvatarTemplateController::catalogue()`) already rejects an unknown provider/resource
+     * with 422 before reaching here; the `default` arm is a defensive floor for any other caller.
      */
-    private static function fetchLive(string $provider, string $resource): array
+    private static function fetchLive(string $provider, string $resource, ?int $organizationId = null): CatalogueRows
     {
-        // The HTTP surface (AvatarTemplateController::catalogue()) already
-        // rejects an unknown provider/resource with 422 before reaching here —
-        // this is a defensive floor for any other caller.
-        $items = match ("{$provider}:{$resource}") {
+        $live = match ("{$provider}:{$resource}") {
             'tavus:voice' => self::tavusVoices(),
             'tavus:replica' => self::tavusReplicas(),
             'tavus:pal' => self::tavusPals(),
@@ -186,10 +237,11 @@ final class AvatarProviderCatalogue
             'heygen:avatar' => self::heygenAvatars(),
             'cartesia:voice' => self::cartesiaVoices(),
             'elevenlabs:voice' => self::elevenlabsVoices(),
+            'hr_avatar:avatar_config' => self::hrAvatarConfigs($organizationId),
             default => throw new CatalogueFetchException('unsupported_catalogue'),
         };
 
-        return $resource === 'voice' ? self::italianFirst($items) : $items;
+        return $resource === 'voice' ? $live->withRows(self::italianFirst($live->rows)) : $live;
     }
 
     /**
@@ -199,21 +251,19 @@ final class AvatarProviderCatalogue
      * created_at}], total_count}`. `limit` defaults to 10 (max 100), so an
      * unpaginated call silently returned ten voices. No `language` field
      * exists on this resource at all.
-     *
-     * @return list<array<string, mixed>>
      */
-    private static function tavusVoices(): array
+    private static function tavusVoices(): CatalogueRows
     {
-        $rows = self::tavusPaged('/voices', ['source' => 'all']);
+        $paged = self::tavusPaged('/voices', ['source' => 'all']);
 
-        return array_map(
+        return $paged->withRows(array_map(
             fn (array $row): array => self::entry(
                 provider: 'tavus',
                 id: self::stringOrEmpty($row['voice_id'] ?? null),
                 label: self::stringOrEmpty($row['voice_name'] ?? null),
             ),
-            array_values(array_filter($rows, static fn (array $row): bool => ($row['status'] ?? 'completed') === 'completed')),
-        );
+            array_values(array_filter($paged->rows, static fn (array $row): bool => ($row['status'] ?? 'completed') === 'completed')),
+        ));
     }
 
     /**
@@ -226,13 +276,14 @@ final class AvatarProviderCatalogue
      * The resource is still named `replica` on this API's wire: it is the
      * picker's contract with the backoffice and with `ProviderFieldSpecs`.
      *
-     * @return list<array<string, mixed>>
+     * `completed` faces only: one still training or errored cannot start a conversation, and offering it
+     * makes the interview fail later.
      */
-    private static function tavusReplicas(): array
+    private static function tavusReplicas(): CatalogueRows
     {
-        $rows = self::tavusPaged('/faces', ['verbose' => 'true']);
+        $paged = self::tavusPaged('/faces', ['verbose' => 'true']);
 
-        return array_map(
+        return $paged->withRows(array_map(
             fn (array $row): array => self::entry(
                 provider: 'tavus',
                 id: self::stringOrEmpty($row['face_id'] ?? $row['replica_id'] ?? null),
@@ -240,10 +291,8 @@ final class AvatarProviderCatalogue
                 previewImageUrl: self::stringOrNull($row['thumbnail_image_url'] ?? null),
                 previewVideoUrl: self::stringOrNull($row['thumbnail_video_url'] ?? null),
             ),
-            // `completed` only: a face still training or errored cannot start a
-            // conversation, and offering it makes the interview fail later.
-            array_values(array_filter($rows, static fn (array $row): bool => ($row['status'] ?? 'completed') === 'completed')),
-        );
+            array_values(array_filter($paged->rows, static fn (array $row): bool => ($row['status'] ?? 'completed') === 'completed')),
+        ));
     }
 
     /**
@@ -259,21 +308,26 @@ final class AvatarProviderCatalogue
      *  - `false` — the id is in `persona_type=system` (Tavus stock personas);
      *  - `null`  — UNKNOWN. In neither list (observed live 2026-09-29: 46
      *              personas unfiltered, 10 `user`, 30 `system`, so some are in
-     *              neither), or the list that would decide could not be
-     *              fetched. Unknown is never promoted to true: PATCH on such a
-     *              persona was answered 400 "Invalid persona_id".
-     * A persona in both lists is `true`. A failed `persona_type` call degrades
-     * only this flag; it never fails the catalogue.
-     *
-     * @return list<array<string, mixed>>
+     *              neither), or the `system` list could not be fetched, or the
+     *              `user` list could not be fetched and the id is not in the
+     *              `system` list. Unknown is never promoted to true: PATCH on
+     *              such a persona was answered 400 "Invalid persona_id".
+     * A persona in both lists is `true`. When only the `user` call failed, an id
+     * found in the `system` list stays `false` (fail closed: no edit affordance;
+     * pinned by TavusPalEditableCatalogueTest). A failed `persona_type` call
+     * degrades only this flag; it never fails the catalogue.
      */
-    private static function tavusPals(): array
+    private static function tavusPals(): CatalogueRows
     {
-        $rows = self::tavusPaged('/pals', []);
-        $userIds = self::tavusPalIds('user');
-        $systemIds = self::tavusPalIds('system');
+        $paged = self::tavusPaged('/pals', []);
+        $user = self::tavusPalIds('user');
+        $system = self::tavusPalIds('system');
+        $userIds = $user === null ? null : self::palIds($user->rows);
+        $systemIds = $system === null ? null : self::palIds($system->rows);
 
-        return array_map(
+        $truncated = $paged->truncated || $user === null || $user->truncated || $system === null || $system->truncated;
+
+        return new CatalogueRows(array_map(
             function (array $row) use ($userIds, $systemIds): array {
                 $id = self::stringOrEmpty($row['pal_id'] ?? $row['persona_id'] ?? null);
 
@@ -289,20 +343,19 @@ final class AvatarProviderCatalogue
                     label: self::stringOrEmpty($row['pal_name'] ?? $row['persona_name'] ?? null),
                 ) + ['editable' => $editable];
             },
-            $rows,
-        );
+            $paged->rows,
+        ), $truncated);
     }
 
     /**
-     * The ids of one `persona_type` list, or `null` when it could not be
-     * fetched (so the caller can tell "not in the list" from "list unknown").
-     *
-     * @return list<string>|null
+     * One `persona_type` list, or `null` when it could not be fetched (so the
+     * caller can tell "not in the list" from "list unknown"). `editable` is unknown for every persona until
+     * the list is back, so the caller serves the catalogue uncached.
      */
-    private static function tavusPalIds(string $personaType): ?array
+    private static function tavusPalIds(string $personaType): ?CatalogueRows
     {
         try {
-            $rows = self::tavusPaged('/pals', ['persona_type' => $personaType]);
+            return self::tavusPaged('/pals', ['persona_type' => $personaType]);
         } catch (CatalogueFetchException $e) {
             Log::warning('AvatarProviderCatalogue: persona_type list failed', [
                 'persona_type' => $personaType,
@@ -312,7 +365,14 @@ final class AvatarProviderCatalogue
 
             return null;
         }
+    }
 
+    /**
+     * @param  list<array<string, mixed>>  $rows
+     * @return list<string>
+     */
+    private static function palIds(array $rows): array
+    {
         return array_values(array_filter(array_map(
             static fn (array $row): string => self::stringOrEmpty($row['pal_id'] ?? $row['persona_id'] ?? null),
             $rows,
@@ -329,31 +389,26 @@ final class AvatarProviderCatalogue
      * bound) one. No preview URL exists on the item: the preview is a
      * separate base64 endpoint.
      *
-     * @return list<array<string, mixed>>
+     * Private voices are the operator's own bindings: their absence must not hide the public catalogue, so a
+     * failure there is tolerated. D4: `language` is read verbatim, never guessed or defaulted: a `null` entry
+     * (an absent key, or a genuinely null value) stays `null`, exactly as it does for Tavus.
      */
-    private static function heygenVoices(): array
+    private static function heygenVoices(): CatalogueRows
     {
-        // Private voices are the operator's own bindings: their absence must
-        // not hide the public catalogue, so a failure there is tolerated.
-        $rows = array_merge(
-            self::heygenPaged('/voices', ['voice_type' => 'public']),
-            self::heygenPaged('/voices', ['voice_type' => 'private'], optional: true),
-        );
+        $listed = self::heygenPaged('/voices', ['voice_type' => 'public'])
+            ->merge(self::heygenPaged('/voices', ['voice_type' => 'private'], optional: true));
 
-        return array_map(
+        return $listed->withRows(array_map(
             fn (array $row): array => self::entry(
                 provider: 'heygen',
                 id: self::stringOrEmpty($row['id'] ?? null),
                 label: self::stringOrEmpty($row['name'] ?? null),
-                // D4: read verbatim, never guessed/defaulted — a `null`
-                // entry (an absent key, or a genuinely null value) stays
-                // `null` here exactly as it does for Tavus.
                 language: self::stringOrNull($row['language'] ?? null),
                 locale: self::stringOrNull($row['language'] ?? null),
                 italian: self::isItalianCode($row['language'] ?? null) ? 'native' : null,
             ),
-            self::uniqueById($rows, 'id'),
-        );
+            self::uniqueById($listed->rows, 'id'),
+        ));
     }
 
     /**
@@ -365,23 +420,19 @@ final class AvatarProviderCatalogue
      * Items: `{id, name, preview_url?, status, is_expired, type, ...}`.
      * Expired avatars and any status other than ACTIVE cannot start a session,
      * so they are not offered.
-     *
-     * @return list<array<string, mixed>>
      */
-    private static function heygenAvatars(): array
+    private static function heygenAvatars(): CatalogueRows
     {
-        $rows = array_merge(
-            self::heygenPaged('/avatars/public'),
-            self::heygenPaged('/avatars', optional: true),
-        );
+        $listed = self::heygenPaged('/avatars/public')
+            ->merge(self::heygenPaged('/avatars', optional: true));
 
         $usable = array_filter(
-            $rows,
+            $listed->rows,
             static fn (array $row): bool => ($row['is_expired'] ?? false) !== true
                 && ($row['status'] ?? 'ACTIVE') === 'ACTIVE',
         );
 
-        return array_map(
+        return $listed->withRows(array_map(
             fn (array $row): array => self::entry(
                 provider: 'heygen',
                 id: self::stringOrEmpty($row['id'] ?? null),
@@ -389,7 +440,7 @@ final class AvatarProviderCatalogue
                 previewImageUrl: self::stringOrNull($row['preview_url'] ?? null),
             ),
             self::uniqueById(array_values($usable), 'id'),
-        );
+        ));
     }
 
     /**
@@ -401,12 +452,11 @@ final class AvatarProviderCatalogue
      * `expand[]=preview_file_url`. Verified live 2026-10-03: the list, the
      * per-voice `GET /voices/{id}?expand[]=preview_file_url` and the file
      * download (Bearer or `X-API-Key`, answers `audio/wav`; 401 without a key).
-     *
-     * @return list<array<string, mixed>>
      */
-    private static function cartesiaVoices(): array
+    private static function cartesiaVoices(): CatalogueRows
     {
         $rows = [];
+        $truncated = false;
         $startingAfter = null;
 
         for ($page = 0; $page < self::MAX_PAGES; $page++) {
@@ -432,10 +482,14 @@ final class AvatarProviderCatalogue
                 break;
             }
 
+            if ($page === self::MAX_PAGES - 1) {
+                $truncated = self::noteTruncated('cartesia', '/voices');
+            }
+
             $startingAfter = $next;
         }
 
-        return array_map(
+        return new CatalogueRows(array_map(
             function (array $row): array {
                 $language = self::stringOrNull($row['language'] ?? null);
 
@@ -444,14 +498,13 @@ final class AvatarProviderCatalogue
                     id: self::stringOrEmpty($row['id'] ?? null),
                     label: self::stringOrEmpty($row['name'] ?? null),
                     language: $language,
-                    // Only WHETHER a clip exists: the url needs the key (see the class docblock).
                     previewAudioViaApi: self::stringOrNull($row['preview_file_url'] ?? null) !== null,
                     locale: $language,
                     italian: self::isItalianCode($language) ? 'native' : null,
                 );
             },
             array_values(array_filter($rows, 'is_array')),
-        );
+        ), $truncated);
     }
 
     /**
@@ -460,12 +513,11 @@ final class AvatarProviderCatalogue
      * verified_languages: [{language, locale, accent, model_id,
      * preview_url}]}], has_more, total_count, next_page_token}`. UNVERIFIED
      * against a live account.
-     *
-     * @return list<array<string, mixed>>
      */
-    private static function elevenlabsVoices(): array
+    private static function elevenlabsVoices(): CatalogueRows
     {
         $rows = [];
+        $truncated = false;
         $token = null;
 
         for ($page = 0; $page < self::MAX_PAGES; $page++) {
@@ -486,15 +538,19 @@ final class AvatarProviderCatalogue
                 break;
             }
 
+            if ($page === self::MAX_PAGES - 1) {
+                $truncated = self::noteTruncated('elevenlabs', '/v2/voices');
+            }
+
             $token = $next;
         }
 
-        return array_map(self::elevenlabsEntry(...), array_values(array_filter($rows, 'is_array')));
+        return new CatalogueRows(array_map(self::elevenlabsEntry(...), array_values(array_filter($rows, 'is_array'))), $truncated);
     }
 
     /**
      * @param  array<string, mixed>  $row
-     * @return array<string, mixed>
+     * @return array{id: string, provider: string, label: string, name: string, language: string|null, locale: string|null, accent: string|null, italian: string|null, preview_image_url: string|null, preview_audio_url: string|null, preview_audio_via_api: bool, preview_video_url: string|null}
      */
     private static function elevenlabsEntry(array $row): array
     {
@@ -510,7 +566,6 @@ final class AvatarProviderCatalogue
         $labelLanguage = self::normalizeLanguage($labels['language'] ?? null);
         $language = $labelLanguage ?? self::normalizeLanguage($primary['language'] ?? null);
 
-        // The verified entry describing the voice's OWN language, when there is one.
         $own = null;
         foreach ($verified as $entry) {
             if (self::normalizeLanguage($entry['language'] ?? null) === $language) {
@@ -523,7 +578,7 @@ final class AvatarProviderCatalogue
         $accent = self::stringOrNull($own['accent'] ?? null) ?? self::stringOrNull($labels['accent'] ?? null);
 
         $italian = null;
-        if ($language === 'it' || mb_strtolower((string) ($labels['accent'] ?? '')) === 'italian') {
+        if ($language === 'it' || mb_strtolower(self::stringOrEmpty($labels['accent'] ?? null)) === 'italian') {
             $italian = 'native';
         } else {
             foreach ($verified as $entry) {
@@ -584,15 +639,82 @@ final class AvatarProviderCatalogue
     }
 
     /**
+     * @wire-source HR-Avatar `GET /v1/avatar-configs` (reconciliation items 38 and 40): `{data: [{id, name,
+     * external_ref, sync_status, ...}], next_cursor}`, filtered server-side by an exact `external_ref`.
+     *
+     * One account is shared by every organization, so each row is checked again against the caller's own
+     * `external_ref`: a filter regression upstream must never become a cross-tenant read. Only configs that can
+     * start a conversation are offered (`synced`, `not_required`).
+     *
+     * When the page cap is hit while the upstream still offers a next cursor, the list is incomplete: a
+     * warning is logged (organization ref only) and the result is marked truncated so the caller does not cache it.
+     * The shared HR-Avatar client carries the base URL, the bearer token, JSON accept and the timeout.
+     */
+    private static function hrAvatarConfigs(?int $organizationId): CatalogueRows
+    {
+        if ($organizationId === null || ! HrAvatarConnection::isAvailable()) {
+            throw new CatalogueFetchException('provider_key_missing');
+        }
+
+        $ref = HrAvatarConnection::organizationRef($organizationId);
+        $rows = [];
+        $truncated = false;
+        $cursor = null;
+
+        for ($page = 1; $page <= self::HR_AVATAR_MAX_PAGES; $page++) {
+            $body = self::request(
+                HrAvatarConnection::PROVIDER,
+                '/v1/avatar-configs',
+                HrAvatarConnection::secretKey(),
+                '',
+                ['limit' => self::PAGE_SIZE, 'external_ref' => $ref] + ($cursor === null ? [] : ['cursor' => $cursor]),
+                client: HrAvatarConnection::client(),
+            );
+
+            $batch = is_array($body['data'] ?? null) ? array_values(array_filter($body['data'], 'is_array')) : [];
+            $rows = array_merge($rows, $batch);
+            $cursor = $body['next_cursor'] ?? null;
+
+            if ($batch === [] || ! is_string($cursor) || $cursor === '') {
+                break;
+            }
+
+            if ($page === self::HR_AVATAR_MAX_PAGES) {
+                $truncated = true;
+                Log::warning('AvatarProviderCatalogue: HR-Avatar config list truncated at the page cap', [
+                    'organization' => $ref,
+                    'max_pages' => self::HR_AVATAR_MAX_PAGES,
+                ]);
+            }
+        }
+
+        $items = [];
+
+        foreach ($rows as $row) {
+            $id = $row['id'] ?? null;
+
+            if (! is_string($id) || $id === ''
+                || ($row['external_ref'] ?? null) !== $ref
+                || ! in_array($row['sync_status'] ?? null, ['synced', 'not_required'], true)) {
+                continue;
+            }
+
+            $items[] = self::entry(HrAvatarConnection::PROVIDER, $id, self::stringOrNull($row['name'] ?? null) ?? $id);
+        }
+
+        return new CatalogueRows($items, $truncated);
+    }
+
+    /**
      * Tavus list endpoints: `limit` (1-100, default 10) / `page`, with
      * `total_count`.
      *
      * @param  array<string, string>  $query
-     * @return list<array<string, mixed>>
      */
-    private static function tavusPaged(string $path, array $query): array
+    private static function tavusPaged(string $path, array $query): CatalogueRows
     {
         $rows = [];
+        $truncated = false;
 
         for ($page = 1; $page <= self::MAX_PAGES; $page++) {
             $body = self::request(
@@ -611,9 +733,13 @@ final class AvatarProviderCatalogue
             if ($batch === [] || count($batch) < self::PAGE_SIZE || (is_int($total) && count($rows) >= $total)) {
                 break;
             }
+
+            if ($page === self::MAX_PAGES) {
+                $truncated = self::noteTruncated('tavus', $path);
+            }
         }
 
-        return $rows;
+        return new CatalogueRows($rows, $truncated);
     }
 
     /**
@@ -622,14 +748,15 @@ final class AvatarProviderCatalogue
      *
      * `$optional` swallows a failure of a secondary list (the account's own
      * avatars / private voices) so it cannot hide the public catalogue; the
-     * failure is still logged with its safe code.
+     * failure is still logged with its safe code. The public catalogue is still served, but without that
+     * list it is not the whole inventory, so the result is marked truncated.
      *
      * @param  array<string, string>  $query
-     * @return list<array<string, mixed>>
      */
-    private static function heygenPaged(string $path, array $query = [], bool $optional = false): array
+    private static function heygenPaged(string $path, array $query = [], bool $optional = false): CatalogueRows
     {
         $rows = [];
+        $truncated = false;
 
         try {
             for ($page = 1; $page <= self::MAX_PAGES; $page++) {
@@ -650,11 +777,17 @@ final class AvatarProviderCatalogue
                 if ($batch === [] || ! is_string($next) || $next === '') {
                     break;
                 }
+
+                if ($page === self::MAX_PAGES) {
+                    $truncated = self::noteTruncated('heygen', $path);
+                }
             }
         } catch (CatalogueFetchException $e) {
             if (! $optional) {
                 throw $e;
             }
+
+            $truncated = true;
 
             Log::warning('AvatarProviderCatalogue: optional list failed', [
                 'path' => $path,
@@ -662,7 +795,23 @@ final class AvatarProviderCatalogue
             ]);
         }
 
-        return $rows;
+        return new CatalogueRows($rows, $truncated);
+    }
+
+    /**
+     * A paged fetch stopped at `MAX_PAGES` while the vendor still offered more: the list is incomplete, so the
+     * caller does not cache it. The warning carries the provider, the list path and the cap only, never a
+     * key or a cursor. Returns true, the value of the caller's `$truncated`.
+     */
+    private static function noteTruncated(string $provider, string $path): bool
+    {
+        Log::warning('AvatarProviderCatalogue: catalogue list truncated at the page cap', [
+            'provider' => $provider,
+            'path' => $path,
+            'max_pages' => self::MAX_PAGES,
+        ]);
+
+        return true;
     }
 
     /**
@@ -674,6 +823,7 @@ final class AvatarProviderCatalogue
      *
      * @param  array<string, mixed>|string  $query
      * @param  array<string, string>  $extraHeaders
+     * @param  PendingRequest|null  $client  A ready client (HR-Avatar's shared one, with its own base URL and auth); `$authHeader` is then unused
      * @return array<mixed>
      */
     private static function request(
@@ -683,14 +833,14 @@ final class AvatarProviderCatalogue
         string $authHeader,
         array|string $query,
         array $extraHeaders = [],
+        ?PendingRequest $client = null,
     ): array {
         if ($apiKey === '') {
             throw new CatalogueFetchException('provider_key_missing');
         }
 
         try {
-            $response = Http::withHeaders([$authHeader => $apiKey] + $extraHeaders)
-                ->timeout(self::TIMEOUT_SECONDS)
+            $response = ($client ?? Http::withHeaders([$authHeader => $apiKey] + $extraHeaders)->timeout(self::TIMEOUT_SECONDS))
                 ->get($url, $query);
         } catch (ConnectionException) {
             throw new CatalogueFetchException('provider_unreachable');
@@ -744,7 +894,7 @@ final class AvatarProviderCatalogue
      * `label` predates the voice providers, `name` is the field the voice
      * picker reads.
      *
-     * @return array<string, mixed>
+     * @return array{id: string, provider: string, label: string, name: string, language: string|null, locale: string|null, accent: string|null, italian: string|null, preview_image_url: string|null, preview_audio_url: string|null, preview_audio_via_api: bool, preview_video_url: string|null}
      */
     private static function entry(
         string $provider,

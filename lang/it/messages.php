@@ -21,5 +21,13 @@ return [
         ],
     ],
 
+    'avatar_templates' => [
+        'provider_immutable' => 'Il provider non può essere cambiato dopo la creazione. Crea invece un nuovo template.',
+        'answer_range' => 'Il tempo massimo di risposta deve essere maggiore del minimo.',
+        'name_taken' => 'Esiste già un template con questo nome.',
+        'persona_key' => 'La persona contiene una chiave non accettata.',
+        'activation_race' => 'Un altro template di questo provider è stato attivato nello stesso momento. Ricarica e riprova.',
+    ],
+
     'welcome' => 'Benvenuto',
 ];

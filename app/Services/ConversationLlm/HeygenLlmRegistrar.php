@@ -76,6 +76,18 @@ use Throwable;
 final class HeygenLlmRegistrar
 {
     /**
+     * Every `message` a `warning` result of this class can carry, for the OpenAPI document of the template
+     * write responses (`ResyncTemplateBinding::WARNING_CODES`). `AvatarTemplateWarningDocumentedTest` pins it to the
+     * codes written in this file.
+     */
+    public const WARNING_CODES = [
+        'llm_provider_unreachable',
+        'llm_credential_missing',
+        'llm_secret_failed',
+        'llm_config_failed',
+    ];
+
+    /**
      * Same host as `HeygenProvider::BASE_URL`. Kept as a separate literal
      * rather than imported: these are different API surfaces that merely
      * happen to share a host, and coupling them would make a future split of
