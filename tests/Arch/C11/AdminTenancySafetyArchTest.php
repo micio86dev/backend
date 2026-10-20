@@ -91,7 +91,7 @@ function phpFilesUnder(string $directory): array
  *
  * @var array<string, string>
  */
-$tenantScopeStripGuardedRoots = ['Http', 'Services/ConversationLlm', 'Actions/ConversationLlm', 'Actions/ReusableLinks', 'Listeners', 'Support/AvatarTemplates'];
+$tenantScopeStripGuardedRoots = ['Http', 'Services/ConversationLlm', 'Actions/ConversationLlm', 'Actions/ReusableLinks', 'Listeners', 'Support/AvatarTemplates', 'Models'];
 
 /**
  * Matches an actual invocation (`::` or `->`) rather than a bare string, so
@@ -253,6 +253,18 @@ $tenantScopeStripAllowlist = [
         .'and by participant_id. Strips ONLY the named tenant scope, never the plural no-args '
         .'form, and selects a single boolean column, so a row of another organization is never '
         .'visible here (pinned by a foreign-organization test in FinalizeInterviewHookTest).',
+    'Models/AvatarTemplate.php' => 'scopeAvailableToTenant() and scopePlatformOnly() are the two '
+        .'named query scopes that read PLATFORM avatar templates next to (or instead of) an '
+        .'organization\'s own, which the global tenant scope alone cannot express. Each strips '
+        .'[\'tenant\', exclude_platform_rows] by NAME (never the no-args form, SoftDeletingScope '
+        .'survives) and re-applies the organization filter itself: scopeAvailableToTenant() fails '
+        .'closed with no tenant context (1 = 0, never "organization_id IS NULL OR ..." for an '
+        .'unknown caller) and otherwise allows only own rows plus platform rows, and '
+        .'scopePlatformOnly() filters on organization_id IS NULL. Reached by the candidate '
+        .'interview (BuildInterviewSessionResponse) and the picker; the deleted hook strips no '
+        .'scope at all (it writes through the base query builder keyed on the loaded row). '
+        .'Models is a guarded root so a new strip in any model needs its own named entry, and the '
+        .'branch-added AvatarTemplateModelScopeStripArchTest pins the exact call sites.',
 ];
 
 /**
