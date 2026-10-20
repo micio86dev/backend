@@ -2,12 +2,13 @@
 
 namespace Database\Seeders;
 
-use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 
 class DatabaseSeeder extends Seeder
 {
-    use WithoutModelEvents;
+    // No `WithoutModelEvents` on purpose: model events fill NOT NULL columns
+    // (`organizations.public_id`, catalogue `revision_id`), so muting them makes
+    // a fresh `db:seed` abort with SQLSTATE[23502].
 
     /**
      * Seed the application's database.
