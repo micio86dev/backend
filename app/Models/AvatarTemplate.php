@@ -191,39 +191,48 @@ class AvatarTemplate extends TenantModel implements AdmitsPlatformRows
             }
         });
 
-        static::deleted(function (self $template): void {
-            if ($template->isForceDeleting()) {
-                return;
-            }
-
-            // A soft-deleted template keeps its ROW, and its row keeps its
-            // `llm_credential_id` — which `llm_credentials` references with
-            // ON DELETE RESTRICT. The credential-deletion guard counts BOUND
-            // templates to decide whether removing a credential is safe, and
-            // that count applies the soft-delete scope while the foreign key
-            // does not. The two disagreed: the guard saw nothing, allowed the
-            // delete, and Postgres refused it as an unhandled 500.
-            //
-            // The binding is torn down at the provider before the template is
-            // deleted (HeygenLlmRegistrar::forget), so it is already dead by
-            // the time we get here — nulling it makes the row agree with
-            // reality rather than inventing a new rule. Both columns go
-            // together because I1's CHECK constraint refuses a half-bound row.
-            //
-            // Written through the query builder deliberately: `runSoftDelete`
-            // updates ONLY `deleted_at`, so dirty attributes set in a
-            // `deleting` hook are silently dropped, and this has to happen
-            // after the row is already marked deleted.
-            static::withoutGlobalScopes()
-                ->whereKey($template->getKey())
-                ->update(['llm_model_id' => null, 'llm_credential_id' => null]);
-
-            $template->llm_model_id = null;
-            $template->llm_credential_id = null;
-            $template->syncOriginalAttributes(['llm_model_id', 'llm_credential_id']);
-        });
+        static::deleted(static fn (self $template) => self::unbindAfterSoftDelete($template));
 
         static::saving(fn (self $template) => $template->assertLlmBindingValid());
+    }
+
+    /**
+     * A soft-deleted template keeps its ROW, and its row keeps its
+     * `llm_credential_id` — which `llm_credentials` references with
+     * ON DELETE RESTRICT. The credential-deletion guard counts BOUND
+     * templates to decide whether removing a credential is safe, and
+     * that count applies the soft-delete scope while the foreign key
+     * does not. The two disagreed: the guard saw nothing, allowed the
+     * delete, and Postgres refused it as an unhandled 500.
+     *
+     * The binding is torn down at the provider before the template is
+     * deleted (HeygenLlmRegistrar::forget), so it is already dead by
+     * the time we get here — nulling it makes the row agree with
+     * reality rather than inventing a new rule. Both columns go
+     * together because I1's CHECK constraint refuses a half-bound row.
+     *
+     * Written through the query builder deliberately: `runSoftDelete`
+     * updates ONLY `deleted_at`, so dirty attributes set in a
+     * `deleting` hook are silently dropped, and this has to happen
+     * after the row is already marked deleted.
+     *
+     * Confined to this row by tests/Feature/C14/AvatarTemplateDeletedHookScopeTest.php; the scope strips of
+     * this model are pinned by tests/Arch/ConversationLlm/AvatarTemplateModelScopeStripArchTest.php.
+     */
+    private static function unbindAfterSoftDelete(self $template): void
+    {
+        if ($template->isForceDeleting()) {
+            return;
+        }
+
+        static::withoutGlobalScope(self::SCOPE_EXCLUDE_PLATFORM_ROWS)
+            ->withTrashed()
+            ->whereKey($template->getKey())
+            ->update(['llm_model_id' => null, 'llm_credential_id' => null]);
+
+        $template->llm_model_id = null;
+        $template->llm_credential_id = null;
+        $template->syncOriginalAttributes(['llm_model_id', 'llm_credential_id']);
     }
 
     /**
@@ -231,9 +240,21 @@ class AvatarTemplate extends TenantModel implements AdmitsPlatformRows
      *
      * Run by the `saving` hook for every write path, and by the template
      * controllers BEFORE they bind an external HeyGen voice: that bind is an
-     * irreversible side effect, so no refusal this hook can raise may come
-     * after it. Throws the same exceptions either way, so a 422 body does not
-     * depend on which of the two raised it.
+     * irreversible side effect, so every refusal this hook can raise on the
+     * values it is given is raised before it. Throws the same exceptions
+     * either way, so a 422 body does not depend on which of the two raised it.
+     *
+     * Not a guarantee against a race: the model and credential are read here
+     * and again by the `saving` hook, so a model withdrawn or a credential
+     * removed in between can still make the hook refuse after the bind. That
+     * window is accepted; closing it would need a lock across the bind, which
+     * a rare concurrent admin edit does not justify.
+     *
+     * I5 (a withdrawn model cannot be NEWLY bound) is gated on `isDirty('llm_model_id')` on purpose: a template
+     * already bound to a model that later becomes unavailable must keep saving unrelated changes, which is the
+     * point of "mark unavailable, never delete" (design D1). I3 only requires the credential to EXIST, since
+     * credentials are platform rows (ratified 2026-09-14); its `credential_not_found` code is a published 422
+     * body and stays verbatim.
      *
      * @throws InvalidLlmBindingException
      * @throws UnsupportedLlmModeException
@@ -252,14 +273,7 @@ class AvatarTemplate extends TenantModel implements AdmitsPlatformRows
             throw new InvalidLlmBindingException('llm_model_id', 'model_not_found');
         }
 
-        // I5 — a withdrawn (`is_available = false`) model cannot be
-        // NEWLY bound. Gated on `isDirty('llm_model_id')` deliberately:
-        // a template already bound to a model that later becomes
-        // unavailable MUST keep saving for unrelated field changes
-        // (renaming it, changing its voice settings) — that is the
-        // entire point of "mark unavailable, never delete" (design D1).
-        // Rejecting every unrelated edit to a grandfathered template
-        // would be a worse bug than the one this guard fixes.
+        // I5 — see the method docblock.
         if ($this->isDirty('llm_model_id') && ! $model->is_available) {
             throw new InvalidLlmBindingException('llm_model_id', 'model_unavailable');
         }
@@ -269,24 +283,7 @@ class AvatarTemplate extends TenantModel implements AdmitsPlatformRows
             throw new UnsupportedLlmModeException('llm_model_id');
         }
 
-        // I3 — the credential must EXIST. It no longer has to belong to
-        // anyone: credentials became platform rows (RATIFIED 2026-09-14),
-        // so the ownership half of this guard was refusing the only
-        // arrangement the product now has.
-        //
-        // What went with it, and why none of it is a loss:
-        //   - the `$ownerOrgId` derivation, including the `saving`-fires-
-        //     before-`creating` gotcha it existed to dodge — nothing
-        //     compares against an owning org any more;
-        //   - the `MissingTenantContextException` on a null org, which was
-        //     protecting that comparison and not the binding;
-        //   - `withoutGlobalScopes()`, which defeated a tenant scope
-        //     `LlmCredential` no longer carries.
-        //
-        // The existence-oracle concern that shaped the original message is
-        // also moot — there is one visible set of credentials now, so "no
-        // such credential" leaks nothing about anybody else. The code is
-        // kept verbatim because it is a published 422 body.
+        // I3 — see the method docblock.
         $credential = LlmCredential::find($this->llm_credential_id);
 
         if ($credential === null) {
