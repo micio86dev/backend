@@ -68,9 +68,8 @@ test('the loser of two concurrent activations gets a 422, never a second active 
         ->assertJsonValidationErrors(['is_active']);
 
     // The rival runs on the request's own connection, so the failed activation's savepoint takes it back too: what
-    // is left is the state before the race. Either way never two active, and never the refused one.
-    expect(raceActiveIds($org))->not->toContain($mine->id)
-        ->and(count(raceActiveIds($org)))->toBeLessThanOrEqual(1)
+    // is left is the state before the race: the old template alone is active, never the refused one.
+    expect(raceActiveIds($org))->toBe([$old->id])
         ->and(AuditLog::withoutGlobalScopes()->whereIn('action', ['avatar_template.activated', 'avatar_template.deactivated'])->count())->toBe(0);
 });
 
