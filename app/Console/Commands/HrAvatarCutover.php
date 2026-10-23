@@ -34,18 +34,20 @@ final class HrAvatarCutover extends Command
             return self::INVALID;
         }
 
-        if ($this->option('apply') && ! HrAvatarConnection::isAvailable()) {
+        $apply = (bool) $this->option('apply');
+
+        if ($apply && ! HrAvatarConnection::isAvailable()) {
             $this->error('HR-Avatar is not configured. Missing: '.implode(', ', HrAvatarConnection::missingVariables()).'. Nothing was changed.');
 
             return self::FAILURE;
         }
 
-        $this->line('mode: dry-run');
+        $this->line('mode: '.($apply ? 'apply' : 'dry-run'));
 
         $counts = ['twinned' => 0, 'reused' => 0, 'would_twin' => 0, 'skipped' => 0, 'failed' => 0];
 
         foreach ($organizationIds as $organizationId) {
-            $rows = $action->cutover($organizationId);
+            $rows = $action->cutover($organizationId, $apply);
 
             if ($rows !== []) {
                 $this->line("org={$organizationId}");

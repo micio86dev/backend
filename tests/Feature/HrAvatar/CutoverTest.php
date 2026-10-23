@@ -110,3 +110,64 @@ test('--apply aborts before any write while unavailable, naming only the missing
     expect(hrcRows())->toBe($before)->and(hrcRows('audit_logs'))->toBe([]);
     Http::assertNothingSent();
 });
+
+// ─── Apply: twin creation ────────────────────────────────────────────────────
+
+/** @return list<array<string, mixed>> */
+function hrcTwins(): array
+{
+    return array_values(array_filter(hrcRows(), fn (array $row): bool => $row['provider'] === 'hr_avatar'));
+}
+
+test('--apply creates one inactive twin per exported source with the exact attributes and one audit row', function (): void {
+    hraMakeAvailable();
+    $a = Organization::factory()->create();
+    $ada = hrcSource($a, 'tavus', [
+        'name' => 'Ada',
+        'description' => 'Warm',
+        'persona' => ['display_name' => 'Ada Persona'],
+        'answer_min_seconds' => 40,
+        'answer_max_seconds' => 80,
+        'hr_avatar_config_id' => 'avc_ADA',
+        'is_active' => true,
+    ]);
+    $unlinked = hrcSource($a, 'heygen', ['name' => 'Unlinked', 'hr_avatar_config_id' => null]);
+    $sourcesBefore = array_values(array_filter(hrcRows(), fn (array $row): bool => $row['provider'] !== 'hr_avatar'));
+
+    [$exit, $output] = hrcRun(['--apply' => true]);
+
+    $twins = hrcTwins();
+    expect($exit)->toBe(0)->and($twins)->toHaveCount(1);
+    $twin = $twins[0];
+    expect($twin['organization_id'])->toBe($a->id)
+        ->and($twin['name'])->toBe('Ada (HR-Avatar)')
+        ->and($twin['description'])->toBe('Warm')
+        ->and(json_decode((string) $twin['persona'], true))->toBe(['display_name' => 'Ada Persona'])
+        ->and(json_decode((string) $twin['config'], true))->toBe([])
+        ->and($twin['hr_avatar_config_id'])->toBe('avc_ADA')
+        ->and($twin['llm_model_id'])->toBeNull()
+        ->and($twin['llm_credential_id'])->toBeNull()
+        ->and($twin['answer_min_seconds'])->toBe(40)
+        ->and($twin['answer_max_seconds'])->toBe(80)
+        ->and((bool) $twin['is_active'])->toBeFalse()
+        ->and($output)->toContain('mode: apply')
+        ->and($output)->toContain("template={$ada} provider=tavus name=\"Ada\" twinned twin={$twin['id']}")
+        ->and($output)->toContain("template={$unlinked} provider=heygen name=\"Unlinked\" skipped not_exported")
+        ->and($output)->toContain('totals: twinned=1 reused=0 would_twin=0 skipped=1 failed=0');
+
+    expect(array_values(array_filter(hrcRows(), fn (array $row): bool => $row['provider'] !== 'hr_avatar')))->toBe($sourcesBefore);
+
+    $audit = hrcRows('audit_logs');
+    expect($audit)->toHaveCount(1)
+        ->and($audit[0]['action'])->toBe('avatar_template.hr_avatar_twin_created')
+        ->and($audit[0]['subject_type'])->toBe('avatar_template')
+        ->and($audit[0]['subject_id'])->toBe($twin['id'])
+        ->and($audit[0]['organization_id'])->toBe($a->id)
+        ->and(json_decode((string) $audit[0]['after'], true))->toBe([
+            'name' => 'Ada (HR-Avatar)',
+            'provider' => 'hr_avatar',
+            'source_template_id' => $ada,
+            'hr_avatar_config_id' => 'avc_ADA',
+        ]);
+    Http::assertNothingSent();
+});
