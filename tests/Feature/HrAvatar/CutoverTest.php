@@ -12,6 +12,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Tests\Helpers\AvatarTemplates\PlatformTemplates;
 
 uses(RefreshDatabase::class);
 
@@ -59,6 +60,36 @@ test('an unknown or non-numeric organization id is refused with exit 2 and nothi
         expect($exit)->toBe(2)->and($output)->toContain($value);
     }
 
+    expect(hrcRows())->toBe($before)->and(hrcRows('audit_logs'))->toBe([]);
+    Http::assertNothingSent();
+});
+
+// ─── Dry run ─────────────────────────────────────────────────────────────────
+
+test('a dry run plans a twin per linked tavus or heygen source, skips unlinked ones, and writes nothing', function (): void {
+    $a = Organization::factory()->create();
+    $b = Organization::factory()->create();
+    $ada = hrcSource($a, 'tavus', ['name' => 'Ada']);
+    $bruno = hrcSource($a, 'heygen', ['name' => 'Bruno']);
+    $chiara = hrcSource($b, 'tavus', ['name' => 'Chiara']);
+    $unlinked = hrcSource($a, 'tavus', ['name' => 'Unlinked', 'hr_avatar_config_id' => null]);
+    hrcSource($b, 'tavus', ['name' => 'Gone']);
+    DB::table('avatar_templates')->where('name', 'Gone')->update(['deleted_at' => now()]);
+    hraSeedTemplate($a, ['name' => 'Native']);
+    PlatformTemplates::insertGlobal(['name' => 'Platform one']);
+    $before = hrcRows();
+
+    [$exit, $output] = hrcRun();
+
+    expect($exit)->toBe(0)
+        ->and($output)->toContain('mode: dry-run')
+        ->and($output)->toContain("org={$a->id}")
+        ->and($output)->toContain("template={$ada} provider=tavus name=\"Ada\" would_twin")
+        ->and($output)->toContain("template={$bruno} provider=heygen name=\"Bruno\" would_twin")
+        ->and($output)->toContain("template={$chiara} provider=tavus name=\"Chiara\" would_twin")
+        ->and($output)->toContain("template={$unlinked} provider=tavus name=\"Unlinked\" skipped not_exported")
+        ->and($output)->toContain('totals: twinned=0 reused=0 would_twin=3 skipped=1 failed=0')
+        ->and($output)->not->toContain('Gone')->not->toContain('Platform one')->not->toContain('Native');
     expect(hrcRows())->toBe($before)->and(hrcRows('audit_logs'))->toBe([]);
     Http::assertNothingSent();
 });

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Actions\AvatarTemplates\CutoverToHrAvatar;
 use App\Models\Organization;
 use Illuminate\Console\Command;
 
@@ -24,7 +25,7 @@ final class HrAvatarCutover extends Command
 
     protected $description = 'Create hr_avatar twins for the linked Tavus/HeyGen templates (dry run unless --apply)';
 
-    public function handle(): int
+    public function handle(CutoverToHrAvatar $action): int
     {
         $organizationIds = $this->organizationIds();
 
@@ -32,7 +33,26 @@ final class HrAvatarCutover extends Command
             return self::INVALID;
         }
 
-        return self::SUCCESS;
+        $this->line('mode: dry-run');
+
+        $counts = ['twinned' => 0, 'reused' => 0, 'would_twin' => 0, 'skipped' => 0, 'failed' => 0];
+
+        foreach ($organizationIds as $organizationId) {
+            $rows = $action->cutover($organizationId);
+
+            if ($rows !== []) {
+                $this->line("org={$organizationId}");
+            }
+
+            foreach ($rows as $row) {
+                $counts[explode(' ', $row['outcome'], 2)[0]]++;
+                $this->line("  {$row['line']} {$row['outcome']}");
+            }
+        }
+
+        $this->line('totals: '.implode(' ', array_map(fn (string $kind, int $count): string => "{$kind}={$count}", array_keys($counts), $counts)));
+
+        return $counts['failed'] > 0 ? self::FAILURE : self::SUCCESS;
     }
 
     /**
