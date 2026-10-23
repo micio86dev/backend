@@ -279,3 +279,40 @@ test('the organization filter leaves every other organization byte-identical and
     $audit = hrcRows('audit_logs');
     expect($audit)->toHaveCount(1)->and($audit[0]['organization_id'])->toBe($a->id);
 });
+
+// ─── Ambiguity guards ────────────────────────────────────────────────────────
+
+test('two live sources of one organization sharing a config id are both refused as config_shared, in a dry run too', function (): void {
+    hraMakeAvailable();
+    $a = Organization::factory()->create();
+    $ada = hrcSource($a, 'tavus', ['name' => 'Ada', 'hr_avatar_config_id' => 'avc_DUP']);
+    $bruno = hrcSource($a, 'heygen', ['name' => 'Bruno', 'hr_avatar_config_id' => 'avc_DUP']);
+    $carla = hrcSource($a, 'tavus', ['name' => 'Carla', 'hr_avatar_config_id' => 'avc_CARLA']);
+    $before = hrcRows();
+
+    [$dryExit, $dryOutput] = hrcRun();
+    expect($dryExit)->toBe(1)
+        ->and($dryOutput)->toContain("template={$ada} provider=tavus name=\"Ada\" failed config_shared")
+        ->and($dryOutput)->toContain("template={$bruno} provider=heygen name=\"Bruno\" failed config_shared")
+        ->and($dryOutput)->toContain("template={$carla} provider=tavus name=\"Carla\" would_twin");
+    expect(hrcRows())->toBe($before);
+
+    [$exit, $output] = hrcRun(['--apply' => true]);
+
+    expect($exit)->toBe(1)
+        ->and($output)->toContain('totals: twinned=1 reused=0 would_twin=0 skipped=0 failed=2')
+        ->and(array_column(hrcTwins(), 'hr_avatar_config_id'))->toBe(['avc_CARLA']);
+});
+
+test('a malformed config id is refused as config_id_invalid and nothing is twinned for it', function (): void {
+    hraMakeAvailable();
+    $a = Organization::factory()->create();
+    $ada = hrcSource($a, 'tavus', ['name' => 'Ada', 'hr_avatar_config_id' => 'not an id']);
+
+    [$exit, $output] = hrcRun(['--apply' => true]);
+
+    expect($exit)->toBe(1)
+        ->and($output)->toContain("template={$ada} provider=tavus name=\"Ada\" failed config_id_invalid")
+        ->and(hrcTwins())->toBe([])
+        ->and(hrcRows('audit_logs'))->toBe([]);
+});

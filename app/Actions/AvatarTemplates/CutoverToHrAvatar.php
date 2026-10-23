@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\AvatarTemplates;
 
 use App\Models\AvatarTemplate;
+use App\Services\Provider\HrAvatarConnection;
 use App\Support\Audit\AuditRecorder;
 use App\Support\Tenancy\TenantContextScope;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -36,12 +37,18 @@ final class CutoverToHrAvatar
     {
         return TenantContextScope::runFor($organizationId, function () use ($apply): array {
             $rows = [];
+            $sources = AvatarTemplate::whereIn('provider', self::SOURCE_PROVIDERS)->orderBy('id')->get();
+            // Two live sources on one config id (possible through `DuplicateAvatarTemplate`, which copies the id)
+            // would make the source<->twin pairing ambiguous, so neither is twinned.
+            $sharedIds = array_keys(array_filter(array_count_values($sources->pluck('hr_avatar_config_id')->filter()->all()), fn (int $count): bool => $count > 1));
 
-            foreach (AvatarTemplate::whereIn('provider', self::SOURCE_PROVIDERS)->orderBy('id')->get() as $source) {
+            foreach ($sources as $source) {
                 $rows[] = [
                     'line' => sprintf('template=%d provider=%s name="%s"', $source->id, $source->provider, mb_substr($source->name, 0, self::NAME_MAX)),
                     'outcome' => match (true) {
                         $source->hr_avatar_config_id === null => 'skipped not_exported',
+                        ! HrAvatarConnection::isConfigId($source->hr_avatar_config_id) => 'failed config_id_invalid',
+                        in_array($source->hr_avatar_config_id, $sharedIds, true) => 'failed config_shared',
                         ! $apply => ($existing = $this->findTwin($source)) === null ? 'would_twin' : "reused twin={$existing->id}",
                         default => $this->twin($source),
                     },
