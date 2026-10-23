@@ -55,7 +55,7 @@ final class DuplicateAvatarTemplate
             foreach ($targetOrganizationIds as $targetId) {
                 $created[] = TenantContextScope::runFor($targetId, function () use ($source, $baseName, $targetId): array {
                     $copy = AvatarTemplate::create([
-                        'name' => $this->freeName($baseName),
+                        'name' => self::freeName($baseName),
                         'description' => $source->description,
                         'provider' => $source->provider,
                         'config' => $source->config,
@@ -104,7 +104,7 @@ final class DuplicateAvatarTemplate
      * so a collision would surface as a 500. Never overwrite: suffix instead.
      * Must run inside the TARGET's tenant context, where the scope applies.
      */
-    private function freeName(string $base): string
+    public static function freeName(string $base): string
     {
         $candidate = $base;
         $n = 1;
