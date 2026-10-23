@@ -171,3 +171,27 @@ test('--apply creates one inactive twin per exported source with the exact attri
         ]);
     Http::assertNothingSent();
 });
+
+// ─── Idempotency ─────────────────────────────────────────────────────────────
+
+test('a second apply reuses the twin by natural key and writes nothing, and a dry run reports it as reused', function (): void {
+    hraMakeAvailable();
+    $a = Organization::factory()->create();
+    $ada = hrcSource($a, 'tavus', ['name' => 'Ada', 'hr_avatar_config_id' => 'avc_ADA']);
+    hrcRun(['--apply' => true]);
+    $twinId = hrcTwins()[0]['id'];
+    $rows = hrcRows();
+    $audit = hrcRows('audit_logs');
+
+    [$exit, $output] = hrcRun(['--apply' => true]);
+
+    expect($exit)->toBe(0)
+        ->and($output)->toContain("template={$ada} provider=tavus name=\"Ada\" reused twin={$twinId}")
+        ->and($output)->toContain('totals: twinned=0 reused=1 would_twin=0 skipped=0 failed=0');
+    expect(hrcRows())->toBe($rows)->and(hrcRows('audit_logs'))->toBe($audit);
+
+    [, $dryOutput] = hrcRun();
+
+    expect($dryOutput)->toContain("reused twin={$twinId}")->toContain('would_twin=0');
+    expect(hrcRows())->toBe($rows);
+});

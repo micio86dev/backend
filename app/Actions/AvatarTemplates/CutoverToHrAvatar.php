@@ -41,7 +41,7 @@ final class CutoverToHrAvatar
                     'line' => sprintf('template=%d provider=%s name="%s"', $source->id, $source->provider, mb_substr($source->name, 0, self::NAME_MAX)),
                     'outcome' => match (true) {
                         $source->hr_avatar_config_id === null => 'skipped not_exported',
-                        ! $apply => 'would_twin',
+                        ! $apply => ($existing = $this->findTwin($source)) === null ? 'would_twin' : "reused twin={$existing->id}",
                         default => $this->twin($source),
                     },
                 ];
@@ -52,17 +52,38 @@ final class CutoverToHrAvatar
     }
 
     /**
-     * Creates the INACTIVE twin of one exported source and returns the outcome. Must run inside the organization's
-     * tenant context. The source row is locked first so two concurrent cutovers serialize on it.
+     * The twin already linked to the source's HR-Avatar config in this organization: a manually created `hr_avatar`
+     * row with the same config id is semantically identical and is reused too. The tenant scopes keep the lookup
+     * inside the organization's live rows, so another organization's row is never matched.
+     */
+    private function findTwin(AvatarTemplate $source): ?AvatarTemplate
+    {
+        return AvatarTemplate::where('provider', 'hr_avatar')
+            ->where('hr_avatar_config_id', $source->hr_avatar_config_id)
+            ->orderBy('id')
+            ->first();
+    }
+
+    /**
+     * Finds or creates the INACTIVE twin of one exported source and returns the outcome. Must run inside the
+     * organization's tenant context. The source row is locked first, so two concurrent cutovers serialize on it and
+     * the lookup that follows cannot miss a twin the other one is creating.
      */
     private function twin(AvatarTemplate $source): string
     {
-        $twin = DB::transaction(function () use ($source): AvatarTemplate {
+        /** @var array{0: AvatarTemplate, 1: bool} $result */
+        $result = DB::transaction(function () use ($source): array {
             AvatarTemplate::whereKey($source->id)->lockForUpdate()->value('id');
+
+            $existing = $this->findTwin($source);
+
+            if ($existing !== null) {
+                return [$existing, false];
+            }
 
             // `config` is literally empty and the LLM binding is left unset: HR-Avatar carries neither. The
             // persona is BEAI's candidate-facing display name, so it is copied. `is_active` stays false.
-            return AvatarTemplate::create([
+            return [AvatarTemplate::create([
                 'name' => DuplicateAvatarTemplate::freeName($source->name.self::TWIN_SUFFIX),
                 'description' => $source->description,
                 'persona' => $source->persona,
@@ -71,8 +92,14 @@ final class CutoverToHrAvatar
                 'provider' => 'hr_avatar',
                 'config' => [],
                 'hr_avatar_config_id' => $source->hr_avatar_config_id,
-            ]);
+            ]), true];
         });
+
+        [$twin, $created] = $result;
+
+        if (! $created) {
+            return "reused twin={$twin->id}";
+        }
 
         // After the commit, like `DuplicateAvatarTemplate`: the recorder never throws, so a failed audit can
         // neither abort the write nor be recorded for a rolled-back one.
