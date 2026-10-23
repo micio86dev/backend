@@ -93,3 +93,20 @@ test('a dry run plans a twin per linked tavus or heygen source, skips unlinked o
     expect(hrcRows())->toBe($before)->and(hrcRows('audit_logs'))->toBe([]);
     Http::assertNothingSent();
 });
+
+// ─── Apply: availability ─────────────────────────────────────────────────────
+
+test('--apply aborts before any write while unavailable, naming only the missing variables', function (): void {
+    config(['hr_avatar.base_url' => 'https://hra.example.test']);
+    hrcSource(Organization::factory()->create());
+    $before = hrcRows();
+
+    [$exit, $output] = hrcRun(['--apply' => true]);
+
+    expect($exit)->toBe(1)
+        ->and($output)->toContain('HR_AVATAR_SECRET_KEY')->toContain('HR_AVATAR_PUBLISHABLE_KEY')
+        ->and($output)->not->toContain('hra.example.test')->not->toContain('HR_AVATAR_BASE_URL')
+        ->and($output)->not->toContain('would_twin');
+    expect(hrcRows())->toBe($before)->and(hrcRows('audit_logs'))->toBe([]);
+    Http::assertNothingSent();
+});

@@ -6,6 +6,7 @@ namespace App\Console\Commands;
 
 use App\Actions\AvatarTemplates\CutoverToHrAvatar;
 use App\Models\Organization;
+use App\Services\Provider\HrAvatarConnection;
 use Illuminate\Console\Command;
 
 /**
@@ -31,6 +32,12 @@ final class HrAvatarCutover extends Command
 
         if ($organizationIds === null) {
             return self::INVALID;
+        }
+
+        if ($this->option('apply') && ! HrAvatarConnection::isAvailable()) {
+            $this->error('HR-Avatar is not configured. Missing: '.implode(', ', HrAvatarConnection::missingVariables()).'. Nothing was changed.');
+
+            return self::FAILURE;
         }
 
         $this->line('mode: dry-run');
