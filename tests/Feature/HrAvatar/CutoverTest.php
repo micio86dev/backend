@@ -253,3 +253,29 @@ test('a name taken between the free-name check and the insert is a write_conflic
         ->and(hrcTwins())->toBe([])
         ->and(hrcRows('audit_logs'))->toBe([]);
 });
+
+// ─── Tenant isolation ────────────────────────────────────────────────────────
+
+test('the organization filter leaves every other organization byte-identical and never matches a config id across organizations', function (): void {
+    hraMakeAvailable();
+    $a = Organization::factory()->create();
+    $b = Organization::factory()->create();
+    $aSource = hrcSource($a, 'tavus', ['name' => 'Ada', 'hr_avatar_config_id' => 'avc_SHARED']);
+    hrcSource($b, 'heygen', ['name' => 'Bruno', 'hr_avatar_config_id' => 'avc_BRUNO']);
+    $bNative = hraSeedTemplate($b, ['name' => 'Native B', 'hr_avatar_config_id' => 'avc_SHARED'])->id;
+    $bBefore = array_values(array_filter(hrcRows(), fn (array $row): bool => $row['organization_id'] === $b->id));
+
+    [$exit, $output] = hrcRun(['--apply' => true, '--organization' => [(string) $a->id]]);
+
+    $twinsOfA = array_values(array_filter(hrcTwins(), fn (array $row): bool => $row['organization_id'] === $a->id));
+    expect($exit)->toBe(0)
+        ->and($twinsOfA)->toHaveCount(1)
+        ->and($twinsOfA[0]['id'])->not->toBe($bNative)
+        ->and($twinsOfA[0]['hr_avatar_config_id'])->toBe('avc_SHARED')
+        ->and($output)->toContain("template={$aSource} provider=tavus name=\"Ada\" twinned")
+        ->and($output)->not->toContain("org={$b->id}")->not->toContain('Bruno');
+    expect(array_values(array_filter(hrcRows(), fn (array $row): bool => $row['organization_id'] === $b->id)))->toBe($bBefore);
+
+    $audit = hrcRows('audit_logs');
+    expect($audit)->toHaveCount(1)->and($audit[0]['organization_id'])->toBe($a->id);
+});
