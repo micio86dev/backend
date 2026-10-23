@@ -84,6 +84,6 @@ final class HrAvatarCutover extends Command
             return array_values(array_unique(array_map('intval', $requested)));
         }
 
-        return Organization::orderBy('id')->pluck('id')->map(fn (mixed $id): int => (int) $id)->all();
+        return array_values(Organization::orderBy('id')->pluck('id')->map(fn (mixed $id): int => (int) $id)->all());
     }
 }
