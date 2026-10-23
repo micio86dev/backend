@@ -7,6 +7,7 @@ declare(strict_types=1);
  * twin per eligible exported source and repins nothing.
  */
 
+use App\Models\AvatarTemplate;
 use App\Models\Organization;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
@@ -194,4 +195,61 @@ test('a second apply reuses the twin by natural key and writes nothing, and a dr
 
     expect($dryOutput)->toContain("reused twin={$twinId}")->toContain('would_twin=0');
     expect(hrcRows())->toBe($rows);
+});
+
+// ─── Twin name ───────────────────────────────────────────────────────────────
+
+test('the twin gets a free name when the derived one is taken', function (): void {
+    hraMakeAvailable();
+    $a = Organization::factory()->create();
+    hrcSource($a, 'tavus', ['name' => 'Ada']);
+    hraSeedTemplate($a, ['name' => 'Ada (HR-Avatar)', 'hr_avatar_config_id' => 'avc_OTHER']);
+
+    [$exit] = hrcRun(['--apply' => true]);
+
+    expect($exit)->toBe(0)
+        ->and(array_column(hrcTwins(), 'name'))->toContain('Ada (HR-Avatar)')->toContain('Ada (HR-Avatar) (copy)');
+});
+
+test('a 120-character source name is truncated before the suffix so the twin name fits', function (): void {
+    hraMakeAvailable();
+    $a = Organization::factory()->create();
+    hrcSource($a, 'tavus', ['name' => str_repeat('è', 120)]);
+
+    [$exit, $output] = hrcRun(['--apply' => true]);
+
+    $twin = hrcTwins()[0];
+    expect($exit)->toBe(0)
+        ->and($twin['name'])->toBe(str_repeat('è', 108).' (HR-Avatar)')
+        ->and(mb_strlen($twin['name']))->toBe(120)
+        ->and($output)->toContain('twinned');
+});
+
+test('a name taken between the free-name check and the insert is a write_conflict that rolls the twin back', function (): void {
+    hraMakeAvailable();
+    $a = Organization::factory()->create();
+    $ada = hrcSource($a, 'tavus', ['name' => 'Ada']);
+    $fired = false;
+    AvatarTemplate::creating(function (AvatarTemplate $template) use (&$fired, $a): void {
+        if ($fired || $template->provider !== 'hr_avatar') {
+            return;
+        }
+
+        $fired = true;
+        DB::table('avatar_templates')->insert([
+            'organization_id' => $a->id,
+            'name' => $template->name,
+            'provider' => 'hr_avatar',
+            'config' => '{}',
+            'hr_avatar_config_id' => 'avc_COMPETITOR',
+        ]);
+    });
+
+    [$exit, $output] = hrcRun(['--apply' => true]);
+
+    expect($exit)->toBe(1)
+        ->and($output)->toContain("template={$ada} provider=tavus name=\"Ada\" failed write_conflict")
+        ->and($output)->toContain('failed=1')
+        ->and(hrcTwins())->toBe([])
+        ->and(hrcRows('audit_logs'))->toBe([]);
 });

@@ -7,6 +7,7 @@ namespace App\Actions\AvatarTemplates;
 use App\Models\AvatarTemplate;
 use App\Support\Audit\AuditRecorder;
 use App\Support\Tenancy\TenantContextScope;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -71,31 +72,13 @@ final class CutoverToHrAvatar
      */
     private function twin(AvatarTemplate $source): string
     {
-        /** @var array{0: AvatarTemplate, 1: bool} $result */
-        $result = DB::transaction(function () use ($source): array {
-            AvatarTemplate::whereKey($source->id)->lockForUpdate()->value('id');
-
-            $existing = $this->findTwin($source);
-
-            if ($existing !== null) {
-                return [$existing, false];
-            }
-
-            // `config` is literally empty and the LLM binding is left unset: HR-Avatar carries neither. The
-            // persona is BEAI's candidate-facing display name, so it is copied. `is_active` stays false.
-            return [AvatarTemplate::create([
-                'name' => DuplicateAvatarTemplate::freeName($source->name.self::TWIN_SUFFIX),
-                'description' => $source->description,
-                'persona' => $source->persona,
-                'answer_min_seconds' => $source->answer_min_seconds,
-                'answer_max_seconds' => $source->answer_max_seconds,
-                'provider' => 'hr_avatar',
-                'config' => [],
-                'hr_avatar_config_id' => $source->hr_avatar_config_id,
-            ]), true];
-        });
-
-        [$twin, $created] = $result;
+        try {
+            [$twin, $created] = $this->findOrCreateTwin($source);
+        } catch (UniqueConstraintViolationException) {
+            // A concurrent write took the name between the free-name check and the insert (the partial unique
+            // index on `(organization_id, name)`): the transaction rolled back, a re-run picks a new name.
+            return 'failed write_conflict';
+        }
 
         if (! $created) {
             return "reused twin={$twin->id}";
@@ -111,5 +94,34 @@ final class CutoverToHrAvatar
         ]);
 
         return "twinned twin={$twin->id}";
+    }
+
+    /**
+     * @return array{0: AvatarTemplate, 1: bool} the twin and whether this call created it
+     */
+    private function findOrCreateTwin(AvatarTemplate $source): array
+    {
+        return DB::transaction(function () use ($source): array {
+            AvatarTemplate::whereKey($source->id)->lockForUpdate()->value('id');
+
+            $existing = $this->findTwin($source);
+
+            if ($existing !== null) {
+                return [$existing, false];
+            }
+
+            // `config` is literally empty and the LLM binding is left unset: HR-Avatar carries neither. The
+            // persona is BEAI's candidate-facing display name, so it is copied. `is_active` stays false.
+            return [AvatarTemplate::create([
+                'name' => DuplicateAvatarTemplate::freeName(mb_substr($source->name, 0, self::NAME_MAX - mb_strlen(self::TWIN_SUFFIX)).self::TWIN_SUFFIX),
+                'description' => $source->description,
+                'persona' => $source->persona,
+                'answer_min_seconds' => $source->answer_min_seconds,
+                'answer_max_seconds' => $source->answer_max_seconds,
+                'provider' => 'hr_avatar',
+                'config' => [],
+                'hr_avatar_config_id' => $source->hr_avatar_config_id,
+            ]), true];
+        });
     }
 }
